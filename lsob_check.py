@@ -70,9 +70,9 @@ ASSETS = [
     {"exchange": "bitunix", "symbol": "NVDAUSDT", "label": "Nvidia", "tv": "NASDAQ:NVDA"},
     {"exchange": "bitunix", "symbol": "GOOGLUSDT", "label": "Google", "tv": "NASDAQ:GOOGL"},
     {"exchange": "bitunix", "symbol": "AMZNUSDT", "label": "Amazon", "tv": "NASDAQ:AMZN"},
-    {"exchange": "bitunix", "symbol": "HYPEUSDT", "label": "HYPE", "tv": "BYBIT:HYPEUSDT"},
+    {"exchange": "bitunix", "symbol": "HYPEUSDT", "label": "HYPE", "tv": "BITUNIX:HYPEUSDT.P"},
     {"exchange": "bitunix", "symbol": "TTWOUSDT", "label": "Take-Two", "tv": "NASDAQ:TTWO"},
-    {"exchange": "bitunix", "symbol": "SPCXUSDT", "label": "SpaceX", "tv": "BITUNIX:SPCXUSDT"},
+    {"exchange": "bitunix", "symbol": "SPCXUSDT", "label": "SpaceX", "tv": "NASDAQ:SPCX"},
     {"exchange": "bitunix", "symbol": "CLUSDT", "label": "Rohoel", "tv": "TVC:USOIL"},
     {"exchange": "mexc", "symbol": "XMRUSDT", "label": "Monero", "tv": "MEXC:XMRUSDT"},
 ]

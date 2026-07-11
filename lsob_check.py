@@ -33,7 +33,7 @@ TELEGRAM_CHAT_ID = os.environ["TELEGRAM_CHAT_ID"]
 
 
 def fetch_klines(symbol, interval, limit=500):
-    url = f"https://api.binance.com/api/v3/klines?symbol={symbol}&interval={interval}&limit={limit}"
+    url = f"https://data-api.binance.vision/api/v3/klines?symbol={symbol}&interval={interval}&limit={limit}"
     with urllib.request.urlopen(url, timeout=15) as r:
         data = json.loads(r.read())
     now_ms = time.time() * 1000

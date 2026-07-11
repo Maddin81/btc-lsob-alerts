@@ -1,0 +1,33 @@
+name: LSOB BTC Check
+
+on:
+  schedule:
+    - cron: "*/15 * * * *"
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Run LSOB check
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: python lsob_check.py
+
+      - name: Commit updated state
+        run: |
+          git config user.name "lsob-bot"
+          git config user.email "lsob-bot@users.noreply.github.com"
+          git add state.json
+          git diff --staged --quiet || git commit -m "Update LSOB state"
+          git push

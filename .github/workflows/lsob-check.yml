@@ -2,11 +2,15 @@ name: LSOB BTC Check
 
 on:
   schedule:
-    - cron: "*/15 * * * *"
+    - cron: "*/5 * * * *"
   workflow_dispatch: {}
 
 permissions:
   contents: write
+
+concurrency:
+  group: lsob-check
+  cancel-in-progress: false
 
 jobs:
   check:

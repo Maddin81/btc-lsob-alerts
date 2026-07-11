@@ -16,10 +16,13 @@ Repo persistiert und vom Workflow zurueckcommittet.
 """
 import json
 import os
+import threading
 import time
 import urllib.parse
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor, as_completed
+
+BITUNIX_SEMAPHORE = threading.Semaphore(4)
 
 PIVOT_LEN = 5
 INVAL_TOL_PCT = 20
@@ -92,8 +95,24 @@ def fetch_klines_binance(symbol, interval, limit=500):
 def fetch_klines_bitunix(symbol, interval, limit=200):
     url = f"https://fapi.bitunix.com/api/v1/futures/market/kline?symbol={symbol}&interval={interval}&limit={limit}"
     req = urllib.request.Request(url, headers=HEADERS)
-    with urllib.request.urlopen(req, timeout=15) as r:
-        payload = json.loads(r.read())
+
+    payload = None
+    last_err = None
+    for attempt in range(4):
+        with BITUNIX_SEMAPHORE:
+            try:
+                with urllib.request.urlopen(req, timeout=15) as r:
+                    payload = json.loads(r.read())
+            finally:
+                time.sleep(0.15)
+        if payload is not None and payload.get("code") == 0 and payload.get("data") is not None:
+            break
+        last_err = payload.get("msg") if payload else "no response"
+        payload = None
+        time.sleep(0.5 * (attempt + 1))
+    if payload is None:
+        raise RuntimeError(f"bitunix kline failed for {symbol} {interval}: {last_err}")
+
     interval_ms = INTERVAL_MS[interval]
     now_ms = time.time() * 1000
     candles = []

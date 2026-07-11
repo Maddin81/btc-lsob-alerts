@@ -1,8 +1,236 @@
 {
-  "1h": {
+  "ADA|1d": {
+    "last_notified_close_time": 1783727999999
+  },
+  "ADA|1h": {
+    "last_notified_close_time": 1783789199999
+  },
+  "ADA|1w": {
+    "last_notified_close_time": 1783295999999
+  },
+  "ADA|4h": {
     "last_notified_close_time": 1783785599999
   },
-  "4h": {
+  "ADA|8h": {
+    "last_notified_close_time": 1783785599999
+  },
+  "AVAX|1d": {
+    "last_notified_close_time": 1783727999999
+  },
+  "AVAX|1h": {
+    "last_notified_close_time": 1783789199999
+  },
+  "AVAX|1w": {
+    "last_notified_close_time": 1783295999999
+  },
+  "AVAX|4h": {
+    "last_notified_close_time": 1783785599999
+  },
+  "AVAX|8h": {
+    "last_notified_close_time": 1783785599999
+  },
+  "Amazon|1d": {
+    "last_notified_close_time": 1783728000000
+  },
+  "Amazon|1h": {
+    "last_notified_close_time": 1783789200000
+  },
+  "Amazon|4h": {
+    "last_notified_close_time": 1783785600000
+  },
+  "Amazon|8h": {
+    "last_notified_close_time": 1783785600000
+  },
+  "Apple|1d": {
+    "last_notified_close_time": 1783728000000
+  },
+  "Apple|1h": {
+    "last_notified_close_time": 1783789200000
+  },
+  "Apple|4h": {
+    "last_notified_close_time": 1783785600000
+  },
+  "Apple|8h": {
+    "last_notified_close_time": 1783785600000
+  },
+  "BNB|1d": {
+    "last_notified_close_time": 1783727999999
+  },
+  "BNB|1h": {
+    "last_notified_close_time": 1783789199999
+  },
+  "BNB|1w": {
+    "last_notified_close_time": 1783295999999
+  },
+  "BNB|4h": {
+    "last_notified_close_time": 1783785599999
+  },
+  "BNB|8h": {
+    "last_notified_close_time": 1783785599999
+  },
+  "BTC|1d": {
+    "last_notified_close_time": 1783727999999
+  },
+  "BTC|1h": {
+    "last_notified_close_time": 1783789199999
+  },
+  "BTC|1w": {
+    "last_notified_close_time": 1783295999999
+  },
+  "BTC|4h": {
+    "last_notified_close_time": 1783785599999
+  },
+  "BTC|8h": {
+    "last_notified_close_time": 1783785599999
+  },
+  "DOGE|1d": {
+    "last_notified_close_time": 1783727999999
+  },
+  "DOGE|1h": {
+    "last_notified_close_time": 1783789199999
+  },
+  "DOGE|1w": {
+    "last_notified_close_time": 1783295999999
+  },
+  "DOGE|4h": {
+    "last_notified_close_time": 1783785599999
+  },
+  "DOGE|8h": {
+    "last_notified_close_time": 1783785599999
+  },
+  "ETH|1d": {
+    "last_notified_close_time": 1783727999999
+  },
+  "ETH|1h": {
+    "last_notified_close_time": 1783789199999
+  },
+  "ETH|1w": {
+    "last_notified_close_time": 1783295999999
+  },
+  "ETH|4h": {
+    "last_notified_close_time": 1783785599999
+  },
+  "ETH|8h": {
+    "last_notified_close_time": 1783785599999
+  },
+  "Gold|1d": {
+    "last_notified_close_time": 1783728000000
+  },
+  "Gold|1h": {
+    "last_notified_close_time": 1783789200000
+  },
+  "Gold|4h": {
+    "last_notified_close_time": 1783785600000
+  },
+  "Gold|8h": {
+    "last_notified_close_time": 1783785600000
+  },
+  "Google|1d": {
+    "last_notified_close_time": 1783728000000
+  },
+  "Google|1h": {
+    "last_notified_close_time": 1783789200000
+  },
+  "Google|4h": {
+    "last_notified_close_time": 1783785600000
+  },
+  "Google|8h": {
+    "last_notified_close_time": 1783785600000
+  },
+  "LINK|1d": {
+    "last_notified_close_time": 1783727999999
+  },
+  "LINK|1h": {
+    "last_notified_close_time": 1783789199999
+  },
+  "LINK|1w": {
+    "last_notified_close_time": 1783295999999
+  },
+  "LINK|4h": {
+    "last_notified_close_time": 1783785599999
+  },
+  "LINK|8h": {
+    "last_notified_close_time": 1783785599999
+  },
+  "Microsoft|1d": {
+    "last_notified_close_time": 1783728000000
+  },
+  "Microsoft|1h": {
+    "last_notified_close_time": 1783789200000
+  },
+  "Microsoft|4h": {
+    "last_notified_close_time": 1783785600000
+  },
+  "Microsoft|8h": {
+    "last_notified_close_time": 1783785600000
+  },
+  "Nvidia|1d": {
+    "last_notified_close_time": 1783728000000
+  },
+  "Nvidia|1h": {
+    "last_notified_close_time": 1783789200000
+  },
+  "Nvidia|4h": {
+    "last_notified_close_time": 1783785600000
+  },
+  "Nvidia|8h": {
+    "last_notified_close_time": 1783785600000
+  },
+  "SOL|1d": {
+    "last_notified_close_time": 1783727999999
+  },
+  "SOL|1h": {
+    "last_notified_close_time": 1783789199999
+  },
+  "SOL|1w": {
+    "last_notified_close_time": 1783295999999
+  },
+  "SOL|4h": {
+    "last_notified_close_time": 1783785599999
+  },
+  "SOL|8h": {
+    "last_notified_close_time": 1783785599999
+  },
+  "Silber|1d": {
+    "last_notified_close_time": 1783728000000
+  },
+  "Silber|1h": {
+    "last_notified_close_time": 1783789200000
+  },
+  "Silber|4h": {
+    "last_notified_close_time": 1783785600000
+  },
+  "Silber|8h": {
+    "last_notified_close_time": 1783785600000
+  },
+  "TRX|1d": {
+    "last_notified_close_time": 1783727999999
+  },
+  "TRX|1h": {
+    "last_notified_close_time": 1783789199999
+  },
+  "TRX|1w": {
+    "last_notified_close_time": 1783295999999
+  },
+  "TRX|4h": {
+    "last_notified_close_time": 1783785599999
+  },
+  "TRX|8h": {
+    "last_notified_close_time": 1783785599999
+  },
+  "XRP|1d": {
+    "last_notified_close_time": 1783727999999
+  },
+  "XRP|1h": {
+    "last_notified_close_time": 1783789199999
+  },
+  "XRP|1w": {
+    "last_notified_close_time": 1783295999999
+  },
+  "XRP|4h": {
+    "last_notified_close_time": 1783785599999
+  },
+  "XRP|8h": {
     "last_notified_close_time": 1783785599999
   }
 }

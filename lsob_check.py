@@ -1,20 +1,25 @@
 #!/usr/bin/env python3
 """
 Reimplementiert die Kernlogik aus Custom_LSOB_Pro.pine (f_sweepEngine, f_findOB,
-Box-Lifecycle) fuer BTCUSDT auf 1h/4h, laeuft als GitHub Actions Cron (unabhaengig
-von jedem lokalen Geraet) und schickt bei "LSOB Created" / "LSOB Entry" (Retest)
-eine Telegram-Nachricht. State (letzte benachrichtigte Kerze je Timeframe) wird in
-state.json im Repo persistiert und vom Workflow zurueckcommittet.
+Box-Lifecycle) fuer mehrere Assets x mehrere Zeitrahmen, laeuft als GitHub Actions
+Cron (unabhaengig von jedem lokalen Geraet) und schickt bei "LSOB Created" /
+"LSOB Entry" (Retest) eine Telegram-Nachricht.
+
+Datenquellen (beide 24/7 handelbar, damit auch Zeitrahmen wie 8h ueberall sauber
+funktionieren -- keine Handelspausen wie bei klassischen Boersen/Forex):
+  - Binance (data-api.binance.vision): Top-10-Kryptos
+  - Bitunix Futures (fapi.bitunix.com): Gold/Silber-Token + tokenisierte Aktien-
+    Perpetuals (24/7 handelbar, im Gegensatz zu den echten Boersen-Handelszeiten)
+
+State (letzte benachrichtigte Kerze je Asset+Timeframe) wird in state.json im
+Repo persistiert und vom Workflow zurueckcommittet.
 """
 import json
 import os
 import time
 import urllib.parse
 import urllib.request
-
-SYMBOL = "BTCUSDT"
-TIMEFRAMES = ["1h", "4h"]
-KLINES_LIMIT = 500
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 PIVOT_LEN = 5
 INVAL_TOL_PCT = 20
@@ -26,15 +31,47 @@ EXPIRY_BARS = 150
 PLACEMENT_DELAY = 0
 OB_LOOKBACK = 20
 
+TIMEFRAMES = ["1h", "4h", "8h", "1d", "1w"]
+INTERVAL_MS = {
+    "1h": 3_600_000,
+    "4h": 4 * 3_600_000,
+    "8h": 8 * 3_600_000,
+    "1d": 24 * 3_600_000,
+    "1w": 7 * 24 * 3_600_000,
+}
+
+ASSETS = [
+    {"exchange": "binance", "symbol": "BTCUSDT", "label": "BTC"},
+    {"exchange": "binance", "symbol": "ETHUSDT", "label": "ETH"},
+    {"exchange": "binance", "symbol": "BNBUSDT", "label": "BNB"},
+    {"exchange": "binance", "symbol": "SOLUSDT", "label": "SOL"},
+    {"exchange": "binance", "symbol": "XRPUSDT", "label": "XRP"},
+    {"exchange": "binance", "symbol": "DOGEUSDT", "label": "DOGE"},
+    {"exchange": "binance", "symbol": "ADAUSDT", "label": "ADA"},
+    {"exchange": "binance", "symbol": "TRXUSDT", "label": "TRX"},
+    {"exchange": "binance", "symbol": "LINKUSDT", "label": "LINK"},
+    {"exchange": "binance", "symbol": "AVAXUSDT", "label": "AVAX"},
+    {"exchange": "bitunix", "symbol": "XAUUSDT", "label": "Gold"},
+    {"exchange": "bitunix", "symbol": "XAGUSDT", "label": "Silber"},
+    {"exchange": "bitunix", "symbol": "AAPLUSDT", "label": "Apple"},
+    {"exchange": "bitunix", "symbol": "MSFTUSDT", "label": "Microsoft"},
+    {"exchange": "bitunix", "symbol": "NVDAUSDT", "label": "Nvidia"},
+    {"exchange": "bitunix", "symbol": "GOOGLUSDT", "label": "Google"},
+    {"exchange": "bitunix", "symbol": "AMZNUSDT", "label": "Amazon"},
+]
+
 STATE_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "state.json")
 
 TELEGRAM_BOT_TOKEN = os.environ["TELEGRAM_BOT_TOKEN"]
 TELEGRAM_CHAT_ID = os.environ["TELEGRAM_CHAT_ID"]
 
+HEADERS = {"User-Agent": "Mozilla/5.0"}
 
-def fetch_klines(symbol, interval, limit=500):
+
+def fetch_klines_binance(symbol, interval, limit=500):
     url = f"https://data-api.binance.vision/api/v3/klines?symbol={symbol}&interval={interval}&limit={limit}"
-    with urllib.request.urlopen(url, timeout=15) as r:
+    req = urllib.request.Request(url, headers=HEADERS)
+    with urllib.request.urlopen(req, timeout=15) as r:
         data = json.loads(r.read())
     now_ms = time.time() * 1000
     candles = []
@@ -50,6 +87,36 @@ def fetch_klines(symbol, interval, limit=500):
             "close_time": close_time,
         })
     return candles
+
+
+def fetch_klines_bitunix(symbol, interval, limit=200):
+    url = f"https://fapi.bitunix.com/api/v1/futures/market/kline?symbol={symbol}&interval={interval}&limit={limit}"
+    req = urllib.request.Request(url, headers=HEADERS)
+    with urllib.request.urlopen(req, timeout=15) as r:
+        payload = json.loads(r.read())
+    interval_ms = INTERVAL_MS[interval]
+    now_ms = time.time() * 1000
+    candles = []
+    for row in payload.get("data", []):
+        open_time = int(row["time"])
+        close_time = open_time + interval_ms
+        if close_time > now_ms:
+            continue
+        candles.append({
+            "open": float(row["open"]),
+            "high": float(row["high"]),
+            "low": float(row["low"]),
+            "close": float(row["close"]),
+            "close_time": close_time,
+        })
+    candles.sort(key=lambda c: c["close_time"])
+    return candles
+
+
+def fetch_klines(asset, interval):
+    if asset["exchange"] == "binance":
+        return fetch_klines_binance(asset["symbol"], interval, limit=500)
+    return fetch_klines_bitunix(asset["symbol"], interval, limit=200)
 
 
 def run_engine(candles):
@@ -178,36 +245,62 @@ def load_state():
 
 def save_state(state):
     with open(STATE_FILE, "w") as f:
-        json.dump(state, f, indent=2)
+        json.dump(state, f, indent=2, sort_keys=True)
+
+
+def process(asset, tf):
+    min_len = 2 * PIVOT_LEN + OB_LOOKBACK + 5
+    candles = fetch_klines(asset, tf)
+    if len(candles) < min_len:
+        return None
+    last_close_time = candles[-1]["close_time"]
+    events = run_engine(candles)
+    price = candles[-1]["close"]
+    return {
+        "label": asset["label"],
+        "tf": tf,
+        "last_close_time": last_close_time,
+        "events": events,
+        "price": price,
+    }
 
 
 def main():
     state = load_state()
-    min_len = 2 * PIVOT_LEN + OB_LOOKBACK + 5
+    jobs = [(a, tf) for a in ASSETS for tf in TIMEFRAMES]
 
-    for tf in TIMEFRAMES:
-        try:
-            candles = fetch_klines(SYMBOL, tf, KLINES_LIMIT)
-            if len(candles) < min_len:
+    results = []
+    with ThreadPoolExecutor(max_workers=6) as pool:
+        futures = {}
+        for asset, tf in jobs:
+            key = f"{asset['label']}|{tf}"
+            already = state.get(key, {}).get("last_notified_close_time")
+            futures[pool.submit(process, asset, tf)] = (key, asset, tf, already)
+
+        for fut in as_completed(futures):
+            key, asset, tf, already = futures[fut]
+            try:
+                res = fut.result()
+            except Exception as e:
+                print(f"Error processing {key}: {e}")
                 continue
-            last_close_time = candles[-1]["close_time"]
-            tf_state = state.get(tf, {})
-            if tf_state.get("last_notified_close_time") == last_close_time:
+            if res is None:
                 continue
-            events = run_engine(candles)
-            price = candles[-1]["close"]
-            if events["short_created"]:
-                send_telegram(f"LSOB Short erstellt ({tf})\nBTC/USDT ${price:,.0f} - neue Short-Zone")
-            if events["long_created"]:
-                send_telegram(f"LSOB Long erstellt ({tf})\nBTC/USDT ${price:,.0f} - neue Long-Zone")
-            if events["short_entry"]:
-                send_telegram(f"LSOB Short Entry ({tf})\nBTC/USDT ${price:,.0f} - Retest Short-Zone")
-            if events["long_entry"]:
-                send_telegram(f"LSOB Long Entry ({tf})\nBTC/USDT ${price:,.0f} - Retest Long-Zone")
-            tf_state["last_notified_close_time"] = last_close_time
-            state[tf] = tf_state
-        except Exception as e:
-            print(f"Error processing {tf}: {e}")
+            if already == res["last_close_time"]:
+                continue
+            results.append((key, res))
+
+    for key, res in results:
+        label, tf, price, events = res["label"], res["tf"], res["price"], res["events"]
+        if events["short_created"]:
+            send_telegram(f"LSOB Short erstellt ({label}, {tf})\n${price:,.4g} - neue Short-Zone")
+        if events["long_created"]:
+            send_telegram(f"LSOB Long erstellt ({label}, {tf})\n${price:,.4g} - neue Long-Zone")
+        if events["short_entry"]:
+            send_telegram(f"LSOB Short Entry ({label}, {tf})\n${price:,.4g} - Retest Short-Zone")
+        if events["long_entry"]:
+            send_telegram(f"LSOB Long Entry ({label}, {tf})\n${price:,.4g} - Retest Long-Zone")
+        state[key] = {"last_notified_close_time": res["last_close_time"]}
 
     save_state(state)
 

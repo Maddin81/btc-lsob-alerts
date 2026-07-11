@@ -14,6 +14,7 @@ funktionieren -- keine Handelspausen wie bei klassischen Boersen/Forex):
 State (letzte benachrichtigte Kerze je Asset+Timeframe) wird in state.json im
 Repo persistiert und vom Workflow zurueckcommittet.
 """
+import io
 import json
 import os
 import threading
@@ -21,6 +22,11 @@ import time
 import urllib.parse
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor, as_completed
+
+import matplotlib
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
+import requests
 
 BITUNIX_SEMAPHORE = threading.Semaphore(4)
 
@@ -44,24 +50,34 @@ INTERVAL_MS = {
 }
 
 ASSETS = [
-    {"exchange": "binance", "symbol": "BTCUSDT", "label": "BTC"},
-    {"exchange": "binance", "symbol": "ETHUSDT", "label": "ETH"},
-    {"exchange": "binance", "symbol": "BNBUSDT", "label": "BNB"},
-    {"exchange": "binance", "symbol": "SOLUSDT", "label": "SOL"},
-    {"exchange": "binance", "symbol": "XRPUSDT", "label": "XRP"},
-    {"exchange": "binance", "symbol": "DOGEUSDT", "label": "DOGE"},
-    {"exchange": "binance", "symbol": "ADAUSDT", "label": "ADA"},
-    {"exchange": "binance", "symbol": "TRXUSDT", "label": "TRX"},
-    {"exchange": "binance", "symbol": "LINKUSDT", "label": "LINK"},
-    {"exchange": "binance", "symbol": "AVAXUSDT", "label": "AVAX"},
-    {"exchange": "bitunix", "symbol": "XAUUSDT", "label": "Gold"},
-    {"exchange": "bitunix", "symbol": "XAGUSDT", "label": "Silber"},
-    {"exchange": "bitunix", "symbol": "AAPLUSDT", "label": "Apple"},
-    {"exchange": "bitunix", "symbol": "MSFTUSDT", "label": "Microsoft"},
-    {"exchange": "bitunix", "symbol": "NVDAUSDT", "label": "Nvidia"},
-    {"exchange": "bitunix", "symbol": "GOOGLUSDT", "label": "Google"},
-    {"exchange": "bitunix", "symbol": "AMZNUSDT", "label": "Amazon"},
+    {"exchange": "binance", "symbol": "BTCUSDT", "label": "BTC", "tv": "BINANCE:BTCUSDT"},
+    {"exchange": "binance", "symbol": "ETHUSDT", "label": "ETH", "tv": "BINANCE:ETHUSDT"},
+    {"exchange": "binance", "symbol": "BNBUSDT", "label": "BNB", "tv": "BINANCE:BNBUSDT"},
+    {"exchange": "binance", "symbol": "SOLUSDT", "label": "SOL", "tv": "BINANCE:SOLUSDT"},
+    {"exchange": "binance", "symbol": "XRPUSDT", "label": "XRP", "tv": "BINANCE:XRPUSDT"},
+    {"exchange": "binance", "symbol": "DOGEUSDT", "label": "DOGE", "tv": "BINANCE:DOGEUSDT"},
+    {"exchange": "binance", "symbol": "ADAUSDT", "label": "ADA", "tv": "BINANCE:ADAUSDT"},
+    {"exchange": "binance", "symbol": "TRXUSDT", "label": "TRX", "tv": "BINANCE:TRXUSDT"},
+    {"exchange": "binance", "symbol": "LINKUSDT", "label": "LINK", "tv": "BINANCE:LINKUSDT"},
+    {"exchange": "binance", "symbol": "AVAXUSDT", "label": "AVAX", "tv": "BINANCE:AVAXUSDT"},
+    {"exchange": "binance", "symbol": "NEARUSDT", "label": "NEAR", "tv": "BINANCE:NEARUSDT"},
+    {"exchange": "binance", "symbol": "SUIUSDT", "label": "SUI", "tv": "BINANCE:SUIUSDT"},
+    {"exchange": "binance", "symbol": "XLMUSDT", "label": "XLM", "tv": "BINANCE:XLMUSDT"},
+    {"exchange": "bitunix", "symbol": "XAUUSDT", "label": "Gold", "tv": "OANDA:XAUUSD"},
+    {"exchange": "bitunix", "symbol": "XAGUSDT", "label": "Silber", "tv": "OANDA:XAGUSD"},
+    {"exchange": "bitunix", "symbol": "AAPLUSDT", "label": "Apple", "tv": "NASDAQ:AAPL"},
+    {"exchange": "bitunix", "symbol": "MSFTUSDT", "label": "Microsoft", "tv": "NASDAQ:MSFT"},
+    {"exchange": "bitunix", "symbol": "NVDAUSDT", "label": "Nvidia", "tv": "NASDAQ:NVDA"},
+    {"exchange": "bitunix", "symbol": "GOOGLUSDT", "label": "Google", "tv": "NASDAQ:GOOGL"},
+    {"exchange": "bitunix", "symbol": "AMZNUSDT", "label": "Amazon", "tv": "NASDAQ:AMZN"},
+    {"exchange": "bitunix", "symbol": "HYPEUSDT", "label": "HYPE", "tv": "BYBIT:HYPEUSDT"},
+    {"exchange": "bitunix", "symbol": "TTWOUSDT", "label": "Take-Two", "tv": "NASDAQ:TTWO"},
+    {"exchange": "bitunix", "symbol": "SPCXUSDT", "label": "SpaceX", "tv": "BITUNIX:SPCXUSDT"},
+    {"exchange": "bitunix", "symbol": "CLUSDT", "label": "Rohoel", "tv": "TVC:USOIL"},
+    {"exchange": "mexc", "symbol": "XMRUSDT", "label": "Monero", "tv": "MEXC:XMRUSDT"},
 ]
+
+TV_INTERVAL = {"1h": "60", "4h": "240", "8h": "480", "1d": "D", "1w": "W"}
 
 STATE_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "state.json")
 
@@ -132,9 +148,36 @@ def fetch_klines_bitunix(symbol, interval, limit=200):
     return candles
 
 
+MEXC_INTERVAL = {"1h": "60m", "4h": "4h", "8h": "8h", "1d": "1d", "1w": "1W"}
+
+
+def fetch_klines_mexc(symbol, interval, limit=500):
+    mexc_iv = MEXC_INTERVAL[interval]
+    url = f"https://api.mexc.com/api/v3/klines?symbol={symbol}&interval={mexc_iv}&limit={limit}"
+    req = urllib.request.Request(url, headers=HEADERS)
+    with urllib.request.urlopen(req, timeout=15) as r:
+        data = json.loads(r.read())
+    now_ms = time.time() * 1000
+    candles = []
+    for row in data:
+        close_time = row[6]
+        if close_time > now_ms:
+            continue
+        candles.append({
+            "open": float(row[1]),
+            "high": float(row[2]),
+            "low": float(row[3]),
+            "close": float(row[4]),
+            "close_time": close_time,
+        })
+    return candles
+
+
 def fetch_klines(asset, interval):
     if asset["exchange"] == "binance":
         return fetch_klines_binance(asset["symbol"], interval, limit=500)
+    if asset["exchange"] == "mexc":
+        return fetch_klines_mexc(asset["symbol"], interval, limit=500)
     return fetch_klines_bitunix(asset["symbol"], interval, limit=200)
 
 
@@ -151,6 +194,7 @@ def run_engine(candles):
     n = len(candles)
     last_idx = n - 1
     events = {"short_created": False, "long_created": False, "short_entry": False, "long_entry": False}
+    zones = {"short_created": None, "long_created": None, "short_entry": None, "long_entry": None}
 
     for idx in range(n):
         c = candles[idx]
@@ -192,9 +236,11 @@ def run_engine(candles):
                     ob = j
                     break
             if ob is not None:
-                short_boxes.append({"top": candles[ob]["high"], "bottom": candles[ob]["low"], "created_bar": ob + PLACEMENT_DELAY})
+                box = {"top": candles[ob]["high"], "bottom": candles[ob]["low"], "created_bar": ob + PLACEMENT_DELAY}
+                short_boxes.append(box)
                 if idx == last_idx:
                     events["short_created"] = True
+                    zones["short_created"] = box
 
         if bull_sweep:
             ob = None
@@ -203,9 +249,11 @@ def run_engine(candles):
                     ob = j
                     break
             if ob is not None:
-                long_boxes.append({"top": candles[ob]["high"], "bottom": candles[ob]["low"], "created_bar": ob + PLACEMENT_DELAY})
+                box = {"top": candles[ob]["high"], "bottom": candles[ob]["low"], "created_bar": ob + PLACEMENT_DELAY}
+                long_boxes.append(box)
                 if idx == last_idx:
                     events["long_created"] = True
+                    zones["long_created"] = box
 
         kept = []
         for b in short_boxes:
@@ -221,6 +269,7 @@ def run_engine(candles):
             if bottom - retest_px <= c["high"] <= top:
                 if idx == last_idx:
                     events["short_entry"] = True
+                    zones["short_entry"] = b
             kept.append(b)
         short_boxes = kept
 
@@ -238,10 +287,11 @@ def run_engine(candles):
             if bottom <= c["low"] <= top + retest_px:
                 if idx == last_idx:
                     events["long_entry"] = True
+                    zones["long_entry"] = b
             kept.append(b)
         long_boxes = kept
 
-    return events
+    return events, zones
 
 
 def send_telegram(text):
@@ -250,6 +300,50 @@ def send_telegram(text):
     req = urllib.request.Request(url, data=data, method="POST")
     with urllib.request.urlopen(req, timeout=15) as r:
         r.read()
+
+
+def send_telegram_photo(image_bytes, caption):
+    url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendPhoto"
+    files = {"photo": ("chart.png", image_bytes, "image/png")}
+    data = {"chat_id": TELEGRAM_CHAT_ID, "caption": caption}
+    resp = requests.post(url, data=data, files=files, timeout=20)
+    resp.raise_for_status()
+
+
+def render_chart(tail, tail_offset, box, direction, label, tf):
+    offset = tail_offset
+    box_color = "#39FF14" if direction == "long" else "#FF6EC7"
+
+    fig, ax = plt.subplots(figsize=(9, 5), dpi=120)
+    for i, c in enumerate(tail):
+        color = "#39FF14" if c["close"] >= c["open"] else "#FF6EC7"
+        ax.plot([i, i], [c["low"], c["high"]], color=color, linewidth=1)
+        body_bottom = min(c["open"], c["close"])
+        body_height = max(abs(c["close"] - c["open"]), (c["high"] - c["low"]) * 0.01)
+        ax.add_patch(plt.Rectangle((i - 0.3, body_bottom), 0.6, body_height, color=color))
+
+    if box is not None:
+        left = box["created_bar"] - offset
+        left = max(left, 0)
+        right = len(tail) - 1
+        height = box["top"] - box["bottom"]
+        ax.add_patch(plt.Rectangle((left, box["bottom"]), right - left + 1, height,
+                                    facecolor=box_color, alpha=0.2, edgecolor=box_color, linewidth=1.5))
+
+    ax.set_title(f"{label} - {tf} LSOB {direction.upper()}", color="white")
+    ax.set_facecolor("#0d1117")
+    fig.patch.set_facecolor("#0d1117")
+    ax.tick_params(colors="white")
+    for spine in ax.spines.values():
+        spine.set_color("#444444")
+    ax.set_xlim(-1, len(tail))
+
+    buf = io.BytesIO()
+    fig.tight_layout()
+    fig.savefig(buf, format="png", facecolor=fig.get_facecolor())
+    plt.close(fig)
+    buf.seek(0)
+    return buf.getvalue()
 
 
 def load_state():
@@ -273,14 +367,20 @@ def process(asset, tf):
     if len(candles) < min_len:
         return None
     last_close_time = candles[-1]["close_time"]
-    events = run_engine(candles)
+    events, zones = run_engine(candles)
     price = candles[-1]["close"]
+    tail = candles[-80:]
+    tail_offset = len(candles) - len(tail)
     return {
         "label": asset["label"],
+        "tv": asset["tv"],
         "tf": tf,
         "last_close_time": last_close_time,
         "events": events,
+        "zones": zones,
         "price": price,
+        "candles": tail,
+        "tail_offset": tail_offset,
     }
 
 
@@ -310,15 +410,26 @@ def main():
             results.append((key, res))
 
     for key, res in results:
-        label, tf, price, events = res["label"], res["tf"], res["price"], res["events"]
-        if events["short_created"]:
-            send_telegram(f"LSOB Short erstellt ({label}, {tf})\n${price:,.4g} - neue Short-Zone")
-        if events["long_created"]:
-            send_telegram(f"LSOB Long erstellt ({label}, {tf})\n${price:,.4g} - neue Long-Zone")
-        if events["short_entry"]:
-            send_telegram(f"LSOB Short Entry ({label}, {tf})\n${price:,.4g} - Retest Short-Zone")
-        if events["long_entry"]:
-            send_telegram(f"LSOB Long Entry ({label}, {tf})\n${price:,.4g} - Retest Long-Zone")
+        label, tf, price, events, zones = res["label"], res["tf"], res["price"], res["events"], res["zones"]
+        tv_url = f"https://www.tradingview.com/chart/?symbol={urllib.parse.quote(res['tv'])}&interval={TV_INTERVAL[tf]}"
+
+        notifications = [
+            ("short_created", "short", "LSOB Short erstellt", "neue Short-Zone"),
+            ("long_created", "long", "LSOB Long erstellt", "neue Long-Zone"),
+            ("short_entry", "short", "LSOB Short Entry", "Retest Short-Zone"),
+            ("long_entry", "long", "LSOB Long Entry", "Retest Long-Zone"),
+        ]
+        for event_key, direction, title, desc in notifications:
+            if not events[event_key]:
+                continue
+            caption = f"{title} ({label}, {tf})\n${price:,.4g} - {desc}\n{tv_url}"
+            try:
+                img = render_chart(res["candles"], res["tail_offset"], zones[event_key], direction, label, tf)
+                send_telegram_photo(img, caption)
+            except Exception as e:
+                print(f"Chart render/send failed for {key}: {e}")
+                send_telegram(caption)
+
         state[key] = {"last_notified_close_time": res["last_close_time"]}
 
     save_state(state)

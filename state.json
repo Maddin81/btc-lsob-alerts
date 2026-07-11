@@ -137,6 +137,21 @@
   "Google|8h": {
     "last_notified_close_time": 1783785600000
   },
+  "HYPE|1d": {
+    "last_notified_close_time": 1783728000000
+  },
+  "HYPE|1h": {
+    "last_notified_close_time": 1783789200000
+  },
+  "HYPE|1w": {
+    "last_notified_close_time": 1783296000000
+  },
+  "HYPE|4h": {
+    "last_notified_close_time": 1783785600000
+  },
+  "HYPE|8h": {
+    "last_notified_close_time": 1783785600000
+  },
   "LINK|1d": {
     "last_notified_close_time": 1783727999999
   },
@@ -164,6 +179,36 @@
   "Microsoft|8h": {
     "last_notified_close_time": 1783785600000
   },
+  "Monero|1d": {
+    "last_notified_close_time": 1783728000000
+  },
+  "Monero|1h": {
+    "last_notified_close_time": 1783789200000
+  },
+  "Monero|1w": {
+    "last_notified_close_time": 1783296000000
+  },
+  "Monero|4h": {
+    "last_notified_close_time": 1783785600000
+  },
+  "Monero|8h": {
+    "last_notified_close_time": 1783785600000
+  },
+  "NEAR|1d": {
+    "last_notified_close_time": 1783727999999
+  },
+  "NEAR|1h": {
+    "last_notified_close_time": 1783789199999
+  },
+  "NEAR|1w": {
+    "last_notified_close_time": 1783295999999
+  },
+  "NEAR|4h": {
+    "last_notified_close_time": 1783785599999
+  },
+  "NEAR|8h": {
+    "last_notified_close_time": 1783785599999
+  },
   "Nvidia|1d": {
     "last_notified_close_time": 1783728000000
   },
@@ -174,6 +219,18 @@
     "last_notified_close_time": 1783785600000
   },
   "Nvidia|8h": {
+    "last_notified_close_time": 1783785600000
+  },
+  "Rohoel|1d": {
+    "last_notified_close_time": 1783728000000
+  },
+  "Rohoel|1h": {
+    "last_notified_close_time": 1783789200000
+  },
+  "Rohoel|4h": {
+    "last_notified_close_time": 1783785600000
+  },
+  "Rohoel|8h": {
     "last_notified_close_time": 1783785600000
   },
   "SOL|1d": {
@@ -191,6 +248,21 @@
   "SOL|8h": {
     "last_notified_close_time": 1783785599999
   },
+  "SUI|1d": {
+    "last_notified_close_time": 1783727999999
+  },
+  "SUI|1h": {
+    "last_notified_close_time": 1783789199999
+  },
+  "SUI|1w": {
+    "last_notified_close_time": 1783295999999
+  },
+  "SUI|4h": {
+    "last_notified_close_time": 1783785599999
+  },
+  "SUI|8h": {
+    "last_notified_close_time": 1783785599999
+  },
   "Silber|1d": {
     "last_notified_close_time": 1783728000000
   },
@@ -201,6 +273,18 @@
     "last_notified_close_time": 1783785600000
   },
   "Silber|8h": {
+    "last_notified_close_time": 1783785600000
+  },
+  "SpaceX|1d": {
+    "last_notified_close_time": 1783728000000
+  },
+  "SpaceX|1h": {
+    "last_notified_close_time": 1783789200000
+  },
+  "SpaceX|4h": {
+    "last_notified_close_time": 1783785600000
+  },
+  "SpaceX|8h": {
     "last_notified_close_time": 1783785600000
   },
   "TRX|1d": {
@@ -216,6 +300,27 @@
     "last_notified_close_time": 1783785599999
   },
   "TRX|8h": {
+    "last_notified_close_time": 1783785599999
+  },
+  "Take-Two|1h": {
+    "last_notified_close_time": 1783789200000
+  },
+  "Take-Two|4h": {
+    "last_notified_close_time": 1783785600000
+  },
+  "XLM|1d": {
+    "last_notified_close_time": 1783727999999
+  },
+  "XLM|1h": {
+    "last_notified_close_time": 1783789199999
+  },
+  "XLM|1w": {
+    "last_notified_close_time": 1783295999999
+  },
+  "XLM|4h": {
+    "last_notified_close_time": 1783785599999
+  },
+  "XLM|8h": {
     "last_notified_close_time": 1783785599999
   },
   "XRP|1d": {

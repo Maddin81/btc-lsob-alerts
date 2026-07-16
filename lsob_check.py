@@ -11,9 +11,11 @@ funktionieren -- keine Handelspausen wie bei klassischen Boersen/Forex):
   - Bitunix Futures (fapi.bitunix.com): Gold/Silber-Token + tokenisierte Aktien-
     Perpetuals (24/7 handelbar, im Gegensatz zu den echten Boersen-Handelszeiten)
 
-State (letzte benachrichtigte Kerze je Asset+Timeframe) wird in state.json im
-Repo persistiert und vom Workflow zurueckcommittet.
+State (letzte gesehene Kerze, aktive Zonen, bereits gemeldete Entries je
+Asset+Timeframe) wird in state.json persistiert; der Workflow committet
+state.json + signals.csv auf den Daten-Branch "lsob-state".
 """
+import csv
 import io
 import json
 import os
@@ -22,6 +24,7 @@ import time
 import urllib.parse
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from datetime import datetime, timedelta, timezone
 
 import matplotlib
 matplotlib.use("Agg")
@@ -39,6 +42,14 @@ MAX_HISTORY_BARS = 2000
 EXPIRY_BARS = 150
 PLACEMENT_DELAY = 0
 OB_LOOKBACK = 20
+
+# Rauschfilter: Boxen, deren Hoehe kleiner als dieser Anteil der ATR(14) ist,
+# werden gar nicht erst angelegt (betrifft Alerts UND Backtest gleichermassen).
+MIN_BOX_ATR_MULT = 0.25
+# Optionaler Trendfilter: Long-Zonen nur ueber, Short-Zonen nur unter EMA(200)
+# des jeweiligen Timeframes. Bewusst per Default aus.
+TREND_FILTER = False
+EMA_LEN = 200
 
 TIMEFRAMES = ["1h", "4h", "8h", "1d", "1w"]
 INTERVAL_MS = {
@@ -77,21 +88,42 @@ ASSETS = [
     {"exchange": "mexc", "symbol": "XMRUSDT", "label": "Monero", "tv": "MEXC:XMRUSDT"},
 ]
 
+ASSET_BY_LABEL = {a["label"]: a for a in ASSETS}
+
 TV_INTERVAL = {"1h": "60", "4h": "240", "8h": "480", "1d": "D", "1w": "W"}
 
-STATE_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "state.json")
+STATE_DIR = os.environ.get("STATE_DIR") or os.path.dirname(os.path.abspath(__file__))
+STATE_FILE = os.path.join(STATE_DIR, "state.json")
+SIGNALS_FILE = os.path.join(STATE_DIR, "signals.csv")
 
-TELEGRAM_BOT_TOKEN = os.environ["TELEGRAM_BOT_TOKEN"]
-TELEGRAM_CHAT_ID = os.environ["TELEGRAM_CHAT_ID"]
+TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
+TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID")
 
 HEADERS = {"User-Agent": "Mozilla/5.0"}
+
+MIN_CANDLES = 2 * PIVOT_LEN + OB_LOOKBACK + 5
+
+SIGNAL_FIELDS = ["ts_utc", "close_time", "label", "tf", "event", "direction",
+                 "price", "box_top", "box_bottom", "box_id", "confluence"]
+
+
+def http_get_json(url, attempts=3, timeout=15):
+    last_err = None
+    for attempt in range(attempts):
+        try:
+            req = urllib.request.Request(url, headers=HEADERS)
+            with urllib.request.urlopen(req, timeout=timeout) as r:
+                return json.loads(r.read())
+        except Exception as e:
+            last_err = e
+            if attempt < attempts - 1:
+                time.sleep(2 ** attempt)
+    raise RuntimeError(f"GET {url} failed after {attempts} attempts: {last_err}")
 
 
 def fetch_klines_binance(symbol, interval, limit=500):
     url = f"https://data-api.binance.vision/api/v3/klines?symbol={symbol}&interval={interval}&limit={limit}"
-    req = urllib.request.Request(url, headers=HEADERS)
-    with urllib.request.urlopen(req, timeout=15) as r:
-        data = json.loads(r.read())
+    data = http_get_json(url)
     now_ms = time.time() * 1000
     candles = []
     for row in data:
@@ -110,20 +142,22 @@ def fetch_klines_binance(symbol, interval, limit=500):
 
 def fetch_klines_bitunix(symbol, interval, limit=200):
     url = f"https://fapi.bitunix.com/api/v1/futures/market/kline?symbol={symbol}&interval={interval}&limit={limit}"
-    req = urllib.request.Request(url, headers=HEADERS)
 
     payload = None
     last_err = None
     for attempt in range(4):
         with BITUNIX_SEMAPHORE:
             try:
-                with urllib.request.urlopen(req, timeout=15) as r:
-                    payload = json.loads(r.read())
+                payload = http_get_json(url, attempts=1)
+            except Exception as e:
+                payload = None
+                last_err = str(e)
             finally:
                 time.sleep(0.15)
         if payload is not None and payload.get("code") == 0 and payload.get("data") is not None:
             break
-        last_err = payload.get("msg") if payload else "no response"
+        if payload is not None:
+            last_err = payload.get("msg")
         payload = None
         time.sleep(0.5 * (attempt + 1))
     if payload is None:
@@ -154,9 +188,7 @@ MEXC_INTERVAL = {"1h": "60m", "4h": "4h", "8h": "8h", "1d": "1d", "1w": "1W"}
 def fetch_klines_mexc(symbol, interval, limit=500):
     mexc_iv = MEXC_INTERVAL[interval]
     url = f"https://api.mexc.com/api/v3/klines?symbol={symbol}&interval={mexc_iv}&limit={limit}"
-    req = urllib.request.Request(url, headers=HEADERS)
-    with urllib.request.urlopen(req, timeout=15) as r:
-        data = json.loads(r.read())
+    data = http_get_json(url)
     now_ms = time.time() * 1000
     candles = []
     for row in data:
@@ -181,7 +213,38 @@ def fetch_klines(asset, interval):
     return fetch_klines_bitunix(asset["symbol"], interval, limit=200)
 
 
+def compute_atr(candles, period=14):
+    atrs = []
+    trs = []
+    prev_close = None
+    for c in candles:
+        if prev_close is None:
+            tr = c["high"] - c["low"]
+        else:
+            tr = max(c["high"] - c["low"], abs(c["high"] - prev_close), abs(c["low"] - prev_close))
+        trs.append(tr)
+        if len(trs) > period:
+            trs.pop(0)
+        atrs.append(sum(trs) / len(trs))
+        prev_close = c["close"]
+    return atrs
+
+
+def compute_ema(candles, period=EMA_LEN):
+    emas = []
+    ema = None
+    k = 2 / (period + 1)
+    for c in candles:
+        ema = c["close"] if ema is None else c["close"] * k + ema * (1 - k)
+        emas.append(ema)
+    return emas
+
+
 def run_engine(candles):
+    """Replayed die komplette History und liefert:
+    - events: chronologische Liste aller Created/Entry-Ereignisse inkl. Box
+    - active: am Ende noch gueltige Short-/Long-Boxen (fuer Konfluenz-Cache)
+    """
     last_piv_high = None
     last_piv_high_bar = None
     last_piv_low = None
@@ -191,14 +254,12 @@ def run_engine(candles):
     short_boxes = []
     long_boxes = []
 
-    n = len(candles)
-    last_idx = n - 1
-    events = {"short_created": False, "long_created": False, "short_entry": False, "long_entry": False}
-    zones = {"short_created": None, "long_created": None, "short_entry": None, "long_entry": None}
+    atr = compute_atr(candles)
+    ema = compute_ema(candles) if TREND_FILTER else None
 
-    for idx in range(n):
-        c = candles[idx]
+    events = []
 
+    for idx, c in enumerate(candles):
         if idx >= 2 * PIVOT_LEN:
             p = idx - PIVOT_LEN
             window = candles[p - PIVOT_LEN: p + PIVOT_LEN + 1]
@@ -236,11 +297,17 @@ def run_engine(candles):
                     ob = j
                     break
             if ob is not None:
-                box = {"top": candles[ob]["high"], "bottom": candles[ob]["low"], "created_bar": ob + PLACEMENT_DELAY}
-                short_boxes.append(box)
-                if idx == last_idx:
-                    events["short_created"] = True
-                    zones["short_created"] = box
+                top, bottom = candles[ob]["high"], candles[ob]["low"]
+                ok = (top - bottom) >= MIN_BOX_ATR_MULT * atr[idx]
+                if TREND_FILTER and c["close"] >= ema[idx]:
+                    ok = False
+                if ok:
+                    box = {"top": top, "bottom": bottom, "created_bar": ob + PLACEMENT_DELAY,
+                           "id": f"S{int(candles[ob]['close_time'])}",
+                           "pivot": last_piv_high, "pivot_bar": last_piv_high_bar}
+                    short_boxes.append(box)
+                    events.append({"type": "short_created", "direction": "short", "bar": idx,
+                                   "close_time": c["close_time"], "box": box})
 
         if bull_sweep:
             ob = None
@@ -249,11 +316,17 @@ def run_engine(candles):
                     ob = j
                     break
             if ob is not None:
-                box = {"top": candles[ob]["high"], "bottom": candles[ob]["low"], "created_bar": ob + PLACEMENT_DELAY}
-                long_boxes.append(box)
-                if idx == last_idx:
-                    events["long_created"] = True
-                    zones["long_created"] = box
+                top, bottom = candles[ob]["high"], candles[ob]["low"]
+                ok = (top - bottom) >= MIN_BOX_ATR_MULT * atr[idx]
+                if TREND_FILTER and c["close"] <= ema[idx]:
+                    ok = False
+                if ok:
+                    box = {"top": top, "bottom": bottom, "created_bar": ob + PLACEMENT_DELAY,
+                           "id": f"L{int(candles[ob]['close_time'])}",
+                           "pivot": last_piv_low, "pivot_bar": last_piv_low_bar}
+                    long_boxes.append(box)
+                    events.append({"type": "long_created", "direction": "long", "bar": idx,
+                                   "close_time": c["close_time"], "box": box})
 
         kept = []
         for b in short_boxes:
@@ -267,9 +340,8 @@ def run_engine(candles):
             if invalidated or expired:
                 continue
             if bottom - retest_px <= c["high"] <= top:
-                if idx == last_idx:
-                    events["short_entry"] = True
-                    zones["short_entry"] = b
+                events.append({"type": "short_entry", "direction": "short", "bar": idx,
+                               "close_time": c["close_time"], "box": b})
             kept.append(b)
         short_boxes = kept
 
@@ -285,13 +357,52 @@ def run_engine(candles):
             if invalidated or expired:
                 continue
             if bottom <= c["low"] <= top + retest_px:
-                if idx == last_idx:
-                    events["long_entry"] = True
-                    zones["long_entry"] = b
+                events.append({"type": "long_entry", "direction": "long", "bar": idx,
+                               "close_time": c["close_time"], "box": b})
             kept.append(b)
         long_boxes = kept
 
-    return events, zones
+    return events, {"short": short_boxes, "long": long_boxes}
+
+
+def evaluate_trade(candles, direction, entry, sl):
+    """Bewertet ein Entry-Signal gegen die Folgekerzen.
+    SL auf der abgewandten Boxseite; Ziele bei 1R und 2R. Beruehrt eine Kerze
+    SL und Ziel gleichzeitig, zaehlt konservativ der SL.
+    Rueckgabe: "tp2", "tp1", "sl", "open" oder "invalid".
+    """
+    risk = (entry - sl) if direction == "long" else (sl - entry)
+    if risk <= 0:
+        return "invalid"
+    if direction == "long":
+        tp1, tp2 = entry + risk, entry + 2 * risk
+    else:
+        tp1, tp2 = entry - risk, entry - 2 * risk
+    reached_1r = False
+    for c in candles:
+        if direction == "long":
+            hit_sl = c["low"] <= sl
+            hit_tp1 = c["high"] >= tp1
+            hit_tp2 = c["high"] >= tp2
+        else:
+            hit_sl = c["high"] >= sl
+            hit_tp1 = c["low"] <= tp1
+            hit_tp2 = c["low"] <= tp2
+        if hit_sl:
+            return "tp1" if reached_1r else "sl"
+        if hit_tp2:
+            return "tp2"
+        if hit_tp1:
+            reached_1r = True
+    return "tp1" if reached_1r else "open"
+
+
+def fmt_price(p):
+    if p >= 1000:
+        return f"${p:,.0f}"
+    if p >= 1:
+        return f"${p:,.2f}"
+    return f"${p:.6g}"
 
 
 def send_telegram(text):
@@ -310,8 +421,10 @@ def send_telegram_photo(image_bytes, caption):
     resp.raise_for_status()
 
 
-def render_chart(tail, tail_offset, box, direction, label, tf):
+def render_chart(tail, tail_offset, event, label, tf):
     offset = tail_offset
+    box = event["box"]
+    direction = event["direction"]
     box_color = "#39FF14" if direction == "long" else "#FF6EC7"
 
     fig, ax = plt.subplots(figsize=(9, 5), dpi=120)
@@ -322,13 +435,33 @@ def render_chart(tail, tail_offset, box, direction, label, tf):
         body_height = max(abs(c["close"] - c["open"]), (c["high"] - c["low"]) * 0.01)
         ax.add_patch(plt.Rectangle((i - 0.3, body_bottom), 0.6, body_height, color=color))
 
+    y_min = min(c["low"] for c in tail)
+    y_max = max(c["high"] for c in tail)
+    y_pad = (y_max - y_min) * 0.03 or y_max * 0.001
+
     if box is not None:
-        left = box["created_bar"] - offset
-        left = max(left, 0)
+        left = max(box["created_bar"] - offset, 0)
         right = len(tail) - 1
         height = box["top"] - box["bottom"]
         ax.add_patch(plt.Rectangle((left, box["bottom"]), right - left + 1, height,
                                     facecolor=box_color, alpha=0.2, edgecolor=box_color, linewidth=1.5))
+
+    # Gesweeptes Pivot-Level als gestrichelte Linie bis zur Sweep-Kerze
+    event_x = event["bar"] - offset
+    pivot = box.get("pivot") if box else None
+    if pivot is not None and y_min - y_pad <= pivot <= y_max + y_pad:
+        piv_left = max((box.get("pivot_bar") or 0) - offset, 0)
+        piv_right = min(max(event_x, piv_left + 1), len(tail) - 1)
+        ax.plot([piv_left, piv_right], [pivot, pivot], color="#FFD700",
+                linewidth=1.2, linestyle="--", alpha=0.9)
+
+    # Signal-Kerze markieren
+    if 0 <= event_x < len(tail):
+        c = tail[event_x]
+        if direction == "long":
+            ax.scatter([event_x], [c["low"] - y_pad], marker="^", color="#39FF14", s=60, zorder=5)
+        else:
+            ax.scatter([event_x], [c["high"] + y_pad], marker="v", color="#FF6EC7", s=60, zorder=5)
 
     ax.set_title(f"{label} - {tf} LSOB {direction.upper()}", color="white")
     ax.set_facecolor("#0d1117")
@@ -337,6 +470,15 @@ def render_chart(tail, tail_offset, box, direction, label, tf):
     for spine in ax.spines.values():
         spine.set_color("#444444")
     ax.set_xlim(-1, len(tail))
+
+    # Zeitachse beschriften
+    step = max(1, len(tail) // 6)
+    ticks = list(range(0, len(tail), step))
+    fmt = "%d.%m %H:%M" if tf in ("1h", "4h", "8h") else "%d.%m.%y"
+    labels = [datetime.fromtimestamp(tail[i]["close_time"] / 1000, timezone.utc).strftime(fmt)
+              for i in ticks]
+    ax.set_xticks(ticks)
+    ax.set_xticklabels(labels, fontsize=7)
 
     buf = io.BytesIO()
     fig.tight_layout()
@@ -361,79 +503,301 @@ def save_state(state):
         json.dump(state, f, indent=2, sort_keys=True)
 
 
+def should_fetch(state, key, tf, now_ms):
+    """Nur fetchen, wenn seit der letzten gesehenen Kerze ueberhaupt eine neue
+    Kerze geschlossen haben kann -- spart den Grossteil der API-Calls."""
+    last = state.get(key, {}).get("last_notified_close_time")
+    if not last:
+        return True
+    return now_ms > last + INTERVAL_MS[tf]
+
+
 def process(asset, tf):
-    min_len = 2 * PIVOT_LEN + OB_LOOKBACK + 5
     candles = fetch_klines(asset, tf)
-    if len(candles) < min_len:
+    if not candles:
         return None
-    last_close_time = candles[-1]["close_time"]
-    events, zones = run_engine(candles)
-    price = candles[-1]["close"]
+    if len(candles) < MIN_CANDLES:
+        # Zu wenig History (z.B. frisch gelistete Bitunix-Perpetuals auf 1d/1w):
+        # kein Fehler -- State trotzdem pflegen, damit nicht jeder Run erneut fetcht.
+        return {"label": asset["label"], "tf": tf, "insufficient": True,
+                "last_close_time": candles[-1]["close_time"]}
+    events, active = run_engine(candles)
     tail = candles[-80:]
-    tail_offset = len(candles) - len(tail)
     return {
         "label": asset["label"],
         "tv": asset["tv"],
         "tf": tf,
-        "last_close_time": last_close_time,
+        "last_close_time": candles[-1]["close_time"],
         "events": events,
-        "zones": zones,
-        "price": price,
+        "active": active,
+        "price": candles[-1]["close"],
         "candles": tail,
-        "tail_offset": tail_offset,
+        "tail_offset": len(candles) - len(tail),
     }
 
 
+def track_error(state, key, msg, now_ms):
+    errs = state.setdefault("_errors", {})
+    e = errs.setdefault(key, {"count": 0, "last_alert": 0})
+    e["count"] += 1
+    if e["count"] >= 3 and now_ms - e["last_alert"] > 24 * 3_600_000:
+        try:
+            send_telegram(f"⚠️ Datenfehler {key}: {msg} ({e['count']} Fehlversuche in Folge)")
+            e["last_alert"] = now_ms
+        except Exception as ex:
+            print(f"Error alert failed for {key}: {ex}")
+
+
+def find_confluence(state, label, tf, direction, box):
+    """Prueft, ob auf hoeheren Timeframes eine aktive Zone gleicher Richtung
+    mit der Event-Box ueberlappt (Zonen-Cache aus dem State)."""
+    hits = []
+    for htf in TIMEFRAMES[TIMEFRAMES.index(tf) + 1:]:
+        zones = state.get(f"{label}|{htf}", {}).get(f"active_{direction}", [])
+        for top, bottom in zones:
+            if top >= box["bottom"] and bottom <= box["top"]:
+                hits.append(htf)
+                break
+    return hits
+
+
+def log_signal(res, event, confluence):
+    exists = os.path.exists(SIGNALS_FILE) and os.path.getsize(SIGNALS_FILE) > 0
+    with open(SIGNALS_FILE, "a", newline="") as f:
+        w = csv.writer(f)
+        if not exists:
+            w.writerow(SIGNAL_FIELDS)
+        box = event["box"]
+        w.writerow([
+            datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            int(event["close_time"]),
+            res["label"], res["tf"], event["type"], event["direction"],
+            res["price"], box["top"], box["bottom"], box["id"],
+            "/".join(confluence),
+        ])
+
+
+EVENT_META = {
+    "short_created": ("🔴 LSOB Short erstellt", "neue Short-Zone"),
+    "long_created": ("🟢 LSOB Long erstellt", "neue Long-Zone"),
+    "short_entry": ("🔴 LSOB Short Entry", "Retest Short-Zone"),
+    "long_entry": ("🟢 LSOB Long Entry", "Retest Long-Zone"),
+}
+
+
+def notify_events(state, key, res):
+    entry_state = state[key]
+    label, tf = res["label"], res["tf"]
+    already = res["already"]
+    # Erstlauf eines Assets: nur Ereignisse der letzten Kerze melden. Sonst
+    # verpasste Kerzen nachholen, aber maximal 3 -- nach laengerer Downtime
+    # sind aeltere Signale ohnehin nicht mehr handelbar (keine Alert-Flut).
+    if already:
+        threshold = max(already, res["last_close_time"] - 3 * INTERVAL_MS[tf])
+    else:
+        threshold = res["last_close_time"] - 1
+    notified = list(entry_state.get("notified_entries", []))
+    tv_url = f"https://www.tradingview.com/chart/?symbol={urllib.parse.quote(res['tv'])}&interval={TV_INTERVAL[tf]}"
+
+    for event in res["events"]:
+        if event["close_time"] <= threshold:
+            continue
+        box = event["box"]
+        is_entry = event["type"].endswith("_entry")
+        if is_entry:
+            # Pro Box nur ein Entry-Alert, egal wie lange der Kurs in der Zone bleibt
+            if box["id"] in notified:
+                continue
+            notified.append(box["id"])
+
+        title, desc = EVENT_META[event["type"]]
+        direction = event["direction"]
+        confluence = find_confluence(state, label, tf, direction, box)
+
+        lines = [
+            f"{title} ({label}, {tf})",
+            f"Preis: {fmt_price(res['price'])} - {desc}",
+            f"Zone: {fmt_price(box['bottom'])} - {fmt_price(box['top'])}",
+        ]
+        if is_entry:
+            if direction == "long":
+                lines.append(f"SL-Idee: unter {fmt_price(box['bottom'])}")
+            else:
+                lines.append(f"SL-Idee: ueber {fmt_price(box['top'])}")
+        if confluence:
+            lines.append(f"⭐ Konfluenz: aktive {'/'.join(confluence)} {direction.capitalize()}-Zone")
+        lines.append(tv_url)
+        caption = "\n".join(lines)
+
+        try:
+            img = render_chart(res["candles"], res["tail_offset"], event, label, tf)
+            send_telegram_photo(img, caption)
+        except Exception as e:
+            print(f"Chart render/send failed for {key}: {e}")
+            try:
+                send_telegram(caption)
+            except Exception as e2:
+                print(f"Telegram send failed for {key}: {e2}")
+        try:
+            log_signal(res, event, confluence)
+        except Exception as e:
+            print(f"Signal log failed for {key}: {e}")
+
+    entry_state["notified_entries"] = notified[-50:]
+
+
+def read_recent_signals(days=7):
+    if not os.path.exists(SIGNALS_FILE):
+        return []
+    cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+    rows = []
+    with open(SIGNALS_FILE, newline="") as f:
+        for row in csv.DictReader(f):
+            try:
+                ts = datetime.fromisoformat(row["ts_utc"])
+            except (ValueError, KeyError):
+                continue
+            if ts >= cutoff:
+                rows.append(row)
+    return rows
+
+
+def maybe_weekly_report(state):
+    """Sonntags ab 18:00 UTC einmalig: Wochenstatistik + Auswertung der
+    Entry-Signale (1R/2R/SL) per Telegram."""
+    now = datetime.now(timezone.utc)
+    if now.weekday() != 6 or now.hour < 18:
+        return
+    meta = state.setdefault("_meta", {})
+    today = now.strftime("%Y-%m-%d")
+    if meta.get("last_weekly_report") == today:
+        return
+    meta["last_weekly_report"] = today
+
+    rows = read_recent_signals(days=7)
+    created = [r for r in rows if r["event"].endswith("_created")]
+    entries = [r for r in rows if r["event"].endswith("_entry")]
+
+    outcomes = {"tp2": 0, "tp1": 0, "sl": 0, "open": 0}
+    kline_cache = {}
+    for r in entries:
+        asset = ASSET_BY_LABEL.get(r["label"])
+        if asset is None:
+            continue
+        cache_key = (r["label"], r["tf"])
+        if cache_key not in kline_cache:
+            try:
+                kline_cache[cache_key] = fetch_klines(asset, r["tf"])
+            except Exception as e:
+                print(f"Weekly report fetch failed for {cache_key}: {e}")
+                kline_cache[cache_key] = []
+        candles = kline_cache[cache_key]
+        try:
+            signal_ct = int(r["close_time"])
+            entry_price = float(r["price"])
+            sl = float(r["box_bottom"]) if r["direction"] == "long" else float(r["box_top"])
+        except (ValueError, KeyError):
+            continue
+        after = [c for c in candles if c["close_time"] > signal_ct]
+        outcome = evaluate_trade(after, r["direction"], entry_price, sl)
+        if outcome in outcomes:
+            outcomes[outcome] += 1
+
+    counts = {}
+    for r in rows:
+        counts[r["label"]] = counts.get(r["label"], 0) + 1
+    top = sorted(counts.items(), key=lambda kv: -kv[1])[:3]
+    top_str = ", ".join(f"{lbl} ({n})" for lbl, n in top) if top else "-"
+
+    week_start = (now - timedelta(days=7)).strftime("%d.%m.")
+    lines = [
+        f"📊 LSOB Wochenreport ({week_start} - {now.strftime('%d.%m.')})",
+        f"Signale: {len(rows)} gesamt - {len(created)} Zonen erstellt, {len(entries)} Entries",
+    ]
+    closed = outcomes["tp2"] + outcomes["tp1"] + outcomes["sl"]
+    if entries:
+        lines.append(f"Entry-Bilanz: 2R: {outcomes['tp2']} | 1R: {outcomes['tp1']} | "
+                     f"SL: {outcomes['sl']} | offen: {outcomes['open']}")
+        if closed:
+            winrate = 100 * (outcomes["tp2"] + outcomes["tp1"]) / closed
+            lines.append(f"Trefferquote (>=1R): {winrate:.0f}%")
+    lines.append(f"Aktivste Assets: {top_str}")
+    send_telegram("\n".join(lines))
+
+
 def main():
+    if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
+        raise SystemExit("TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID fehlen")
+
     state = load_state()
-    jobs = [(a, tf) for a in ASSETS for tf in TIMEFRAMES]
+    now_ms = time.time() * 1000
+    errors = state.setdefault("_errors", {})
+
+    jobs = []
+    for asset in ASSETS:
+        for tf in TIMEFRAMES:
+            key = f"{asset['label']}|{tf}"
+            if should_fetch(state, key, tf, now_ms):
+                jobs.append((key, asset, tf))
 
     results = []
     with ThreadPoolExecutor(max_workers=6) as pool:
-        futures = {}
-        for asset, tf in jobs:
-            key = f"{asset['label']}|{tf}"
-            already = state.get(key, {}).get("last_notified_close_time")
-            futures[pool.submit(process, asset, tf)] = (key, asset, tf, already)
-
+        futures = {pool.submit(process, asset, tf): key for key, asset, tf in jobs}
         for fut in as_completed(futures):
-            key, asset, tf, already = futures[fut]
+            key = futures[fut]
             try:
                 res = fut.result()
             except Exception as e:
                 print(f"Error processing {key}: {e}")
+                track_error(state, key, str(e), now_ms)
                 continue
+            errors.pop(key, None)
             if res is None:
-                continue
-            if already == res["last_close_time"]:
                 continue
             results.append((key, res))
 
+    # Erst den kompletten Zonen-Cache aktualisieren, damit die Konfluenz-Pruefung
+    # beim Benachrichtigen schon die frischesten Zonen aller Timeframes sieht.
     for key, res in results:
-        label, tf, price, events, zones = res["label"], res["tf"], res["price"], res["events"], res["zones"]
-        tv_url = f"https://www.tradingview.com/chart/?symbol={urllib.parse.quote(res['tv'])}&interval={TV_INTERVAL[tf]}"
+        entry_state = state.setdefault(key, {})
+        res["already"] = entry_state.get("last_notified_close_time")
+        if res["already"] == res["last_close_time"]:
+            res["skip"] = True
+            continue
+        entry_state["last_notified_close_time"] = res["last_close_time"]
+        if not res.get("insufficient"):
+            entry_state["active_short"] = [[b["top"], b["bottom"]] for b in res["active"]["short"]][-10:]
+            entry_state["active_long"] = [[b["top"], b["bottom"]] for b in res["active"]["long"]][-10:]
 
-        notifications = [
-            ("short_created", "short", "LSOB Short erstellt", "neue Short-Zone"),
-            ("long_created", "long", "LSOB Long erstellt", "neue Long-Zone"),
-            ("short_entry", "short", "LSOB Short Entry", "Retest Short-Zone"),
-            ("long_entry", "long", "LSOB Long Entry", "Retest Long-Zone"),
-        ]
-        for event_key, direction, title, desc in notifications:
-            if not events[event_key]:
-                continue
-            caption = f"{title} ({label}, {tf})\n${price:,.4g} - {desc}\n{tv_url}"
-            try:
-                img = render_chart(res["candles"], res["tail_offset"], zones[event_key], direction, label, tf)
-                send_telegram_photo(img, caption)
-            except Exception as e:
-                print(f"Chart render/send failed for {key}: {e}")
-                send_telegram(caption)
+    for key, res in results:
+        if res.get("insufficient") or res.get("skip"):
+            continue
+        notify_events(state, key, res)
 
-        state[key] = {"last_notified_close_time": res["last_close_time"]}
+    try:
+        maybe_weekly_report(state)
+    except Exception as e:
+        print(f"Weekly report failed: {e}")
 
     save_state(state)
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except SystemExit:
+        raise
+    except Exception as exc:
+        # Kompletter Crash: einmal (mit 6h-Drossel) nach Telegram melden,
+        # dann den Workflow trotzdem fehlschlagen lassen.
+        try:
+            state = load_state()
+            meta = state.setdefault("_meta", {})
+            now_ms = time.time() * 1000
+            if now_ms - meta.get("last_crash_alert", 0) > 6 * 3_600_000:
+                send_telegram(f"🚨 LSOB-Check abgestuerzt: {exc}")
+                meta["last_crash_alert"] = now_ms
+                save_state(state)
+        except Exception:
+            pass
+        raise

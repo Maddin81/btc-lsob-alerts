@@ -1,0 +1,55 @@
+:root {
+  --bg: #12141a;
+  --card: #1c1f28;
+  --line: #2a2e3a;
+  --text: #e6e8ee;
+  --muted: #8a90a0;
+  --accent: #4c8bf5;
+  --danger: #ef4444;
+  --ok: #22c55e;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+}
+header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 12px 18px; border-bottom: 1px solid var(--line);
+  position: sticky; top: 0; background: var(--bg); z-index: 5;
+}
+h1 { font-size: 18px; margin: 0; }
+button {
+  background: var(--card); color: var(--text); border: 1px solid var(--line);
+  border-radius: 8px; padding: 8px 12px; cursor: pointer; font-size: 14px;
+}
+button:hover { border-color: var(--accent); }
+.grid {
+  display: grid; gap: 14px; padding: 16px;
+  grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+}
+.card {
+  background: var(--card); border: 1px solid var(--line);
+  border-radius: 12px; overflow: hidden; display: flex; flex-direction: column;
+}
+.cam-title { display: flex; align-items: center; gap: 8px; padding: 10px 12px; font-weight: 600; }
+.dot { width: 10px; height: 10px; border-radius: 50%; background: var(--muted); }
+.dot.online { background: var(--ok); }
+.dot.offline { background: var(--danger); }
+.video-wrap { position: relative; background: #000; aspect-ratio: 16/9; }
+.video { width: 100%; height: 100%; object-fit: contain; display: block; }
+.motion-badge {
+  position: absolute; top: 8px; right: 8px; background: var(--danger);
+  color: #fff; padding: 3px 8px; border-radius: 6px; font-size: 12px;
+  opacity: 0; transition: opacity .2s;
+}
+.motion-badge.active { opacity: 1; }
+.ptz { padding: 10px; display: grid; justify-items: center; gap: 6px; }
+.ptz-mid { display: flex; gap: 6px; }
+.ptz button { min-width: 44px; }
+.zoom { display: flex; gap: 6px; margin-top: 4px; }
+dialog { background: var(--card); color: var(--text); border: 1px solid var(--line); border-radius: 12px; }
+#discoverResult { max-width: 420px; font-size: 14px; line-height: 1.5; }
+code { color: var(--accent); }

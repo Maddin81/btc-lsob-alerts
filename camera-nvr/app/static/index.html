@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Camera-NVR</title>
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+  <header>
+    <h1>&#128247; Camera-NVR</h1>
+    <div class="tools">
+      <button id="discoverBtn" title="ONVIF-Kameras im Netz suchen">Kameras suchen</button>
+    </div>
+  </header>
+
+  <main id="grid" class="grid"></main>
+
+  <dialog id="discoverDlg">
+    <h3>Gefundene ONVIF-Geraete</h3>
+    <div id="discoverResult">Suche laeuft &hellip;</div>
+    <form method="dialog"><button>Schliessen</button></form>
+  </dialog>
+
+  <template id="cardTpl">
+    <section class="card">
+      <div class="cam-title"><span class="dot"></span><span class="name"></span></div>
+      <div class="video-wrap">
+        <img class="video" alt="Live" />
+        <div class="motion-badge">Bewegung</div>
+      </div>
+      <div class="ptz" hidden>
+        <button data-dir="up">&#9650;</button>
+        <div class="ptz-mid">
+          <button data-dir="left">&#9664;</button>
+          <button data-dir="stop">&#9632;</button>
+          <button data-dir="right">&#9654;</button>
+        </div>
+        <button data-dir="down">&#9660;</button>
+        <div class="zoom">
+          <button data-dir="zin">Zoom +</button>
+          <button data-dir="zout">Zoom &minus;</button>
+        </div>
+      </div>
+    </section>
+  </template>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>

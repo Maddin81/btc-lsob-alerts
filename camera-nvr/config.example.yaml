@@ -1,0 +1,75 @@
+# -----------------------------------------------------------------------------
+# Beispiel-Konfiguration fuer die eigene Kamera-Software (Camera-NVR)
+#
+# Kopiere diese Datei nach  config.yaml  und trage deine Kameras ein.
+# Passwoerter koennen auch als Umgebungsvariable gesetzt werden, z.B.
+#   password: "${CAM1_PASS}"
+# -----------------------------------------------------------------------------
+
+server:
+  host: "0.0.0.0"
+  port: 8080
+  # Optionaler Zugangsschutz fuer das Web-Dashboard (Basic Auth).
+  # Leer lassen = kein Login.
+  auth_user: ""
+  auth_pass: ""
+
+# Wohin Snapshots / Ereignisse gespeichert werden (im Container gemountet).
+storage:
+  events_dir: "/data/events"
+  # Aeltere Ereignis-Snapshots automatisch loeschen (Tage). 0 = nie.
+  retention_days: 14
+
+# Globale Benachrichtigungen bei Bewegung.
+# Es koennen mehrere Kanaele gleichzeitig aktiv sein.
+notify:
+  telegram:
+    enabled: false
+    bot_token: "${TELEGRAM_BOT_TOKEN}"
+    chat_id: "${TELEGRAM_CHAT_ID}"
+  webhook:
+    enabled: false
+    url: "https://example.com/hook"
+  # Mindestabstand zwischen zwei Alarmen derselben Kamera (Sekunden),
+  # damit du bei Dauerbewegung nicht zugespammt wirst.
+  cooldown_seconds: 60
+
+# -----------------------------------------------------------------------------
+# Deine Kameras. Jede Kamera braucht mindestens eine RTSP-URL.
+# Fuer PTZ und Snapshots werden zusaetzlich die ONVIF-Zugangsdaten genutzt.
+# -----------------------------------------------------------------------------
+cameras:
+  - id: "hof"
+    name: "Hof / Einfahrt"
+    host: "192.168.1.50"
+    username: "admin"
+    password: "${CAM1_PASS}"
+    # Haupt-Stream (hohe Aufloesung) - optional, fuer spaetere Aufnahme.
+    rtsp_main: "rtsp://admin:${CAM1_PASS}@192.168.1.50:554/Streaming/Channels/101"
+    # Sub-Stream (niedrige Aufloesung) - wird fuer Live-Grid + Bewegungserkennung
+    # verwendet. Spart massiv CPU. Wenn leer, wird rtsp_main benutzt.
+    rtsp_sub: "rtsp://admin:${CAM1_PASS}@192.168.1.50:554/Streaming/Channels/102"
+    # ONVIF-Port (haeufig 80, manchmal 8000 oder 2020).
+    onvif_port: 80
+    ptz: true
+    motion:
+      enabled: true
+      # Empfindlichkeit: kleinere Zahl = empfindlicher.
+      # Anteil veraenderter Pixel (Prozent), ab dem Bewegung erkannt wird.
+      sensitivity_percent: 1.5
+      # Bereich (x,y,w,h in Prozent 0-100) auf den geachtet wird. Leer = ganzes Bild.
+      region: []
+
+  - id: "tuer"
+    name: "Haustuer"
+    host: "192.168.1.51"
+    username: "admin"
+    password: "${CAM2_PASS}"
+    rtsp_main: "rtsp://admin:${CAM2_PASS}@192.168.1.51:554/live/ch0"
+    rtsp_sub: "rtsp://admin:${CAM2_PASS}@192.168.1.51:554/live/ch1"
+    onvif_port: 8000
+    ptz: false
+    motion:
+      enabled: true
+      sensitivity_percent: 2.0
+      region: []

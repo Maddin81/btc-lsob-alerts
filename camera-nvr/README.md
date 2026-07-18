@@ -57,7 +57,14 @@ docker compose run --rm camera-nvr python -m app.autodetect \
 # Oder gezielt einzelne IPs:
 docker compose run --rm camera-nvr python -m app.autodetect \
     --host 192.168.1.50 --host 192.168.1.51 --user admin --pass DEIN_PASSWORT
+
+# Falls Multicast blockiert ist: Subnetz direkt scannen
+docker compose run --rm camera-nvr python -m app.autodetect \
+    --subnet 192.168.1.0/24 --user admin --pass DEIN_PASSWORT -o /config/config.yaml
 ```
+
+Findet die Netz-Suche (Multicast) nichts, scannt die Software automatisch dein
+lokales `/24`-Subnetz nach ONVIF-Ports ab — du musst also nichts von Hand suchen.
 
 Die Erkennung liefert automatisch: RTSP-Haupt- & Sub-Stream, ONVIF-Port,
 PTZ-Fähigkeit und einen Vorschlag für Name/ID. Falls du das Passwort nicht

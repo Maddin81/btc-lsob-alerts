@@ -19,8 +19,11 @@ Nutzung (auf der Synology / im lokalen Netz):
 from __future__ import annotations
 
 import argparse
+import ipaddress
 import re
+import socket
 import sys
+from concurrent.futures import ThreadPoolExecutor
 
 from .onvif_ptz import COMMON_ONVIF_PORTS, discover, probe_onvif
 
@@ -34,6 +37,53 @@ DEFAULT_CREDENTIALS = [
     ("admin", "9999"),
     ("root", "root"),
 ]
+
+
+def _local_subnet() -> str | None:
+    """Ermittelt das lokale /24-Subnetz (z.B. '192.168.1.0/24') anhand der
+    eigenen LAN-IP. Es wird kein Paket gesendet, nur die Route bestimmt."""
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        s.connect(("8.8.8.8", 80))
+        ip = s.getsockname()[0]
+    except Exception:  # noqa: BLE001
+        return None
+    finally:
+        s.close()
+    try:
+        return str(ipaddress.ip_network(ip + "/24", strict=False))
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def _port_open(host: str, port: int, timeout: float = 0.4) -> bool:
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.settimeout(timeout)
+        try:
+            return s.connect_ex((host, port)) == 0
+        except OSError:
+            return False
+
+
+def scan_subnet(subnet: str, ports: list[int] | None = None) -> list[tuple[str, int]]:
+    """Scannt ein Subnetz nach offenen ONVIF-Ports. Fallback, wenn WS-Discovery
+    (Multicast) im Netz blockiert ist. Gibt [(ip, offener_port), ...] zurueck."""
+    ports = ports or COMMON_ONVIF_PORTS
+    net = ipaddress.ip_network(subnet, strict=False)
+
+    def check(ip_obj) -> tuple[str, int] | None:
+        ip = str(ip_obj)
+        for p in ports:
+            if _port_open(ip, p):
+                return (ip, p)
+        return None
+
+    hits: list[tuple[str, int]] = []
+    with ThreadPoolExecutor(max_workers=64) as ex:
+        for res in ex.map(check, net.hosts()):
+            if res:
+                hits.append(res)
+    return hits
 
 
 def _slug(text: str, fallback: str) -> str:
@@ -111,6 +161,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--user", action="append", default=[], help="ONVIF-Benutzer (mehrfach moeglich).")
     ap.add_argument("--pass", dest="password", action="append", default=[], help="ONVIF-Passwort (parallel zu --user).")
     ap.add_argument("--discover-timeout", type=int, default=5, help="WS-Discovery Timeout in Sekunden.")
+    ap.add_argument("--subnet", help="Subnetz scannen statt Multicast, z.B. 192.168.1.0/24.")
     ap.add_argument("-o", "--output", help="Config-YAML in Datei schreiben statt auf stdout.")
     args = ap.parse_args(argv)
 
@@ -126,15 +177,27 @@ def main(argv: list[str] | None = None) -> int:
     targets: list[tuple[str, int | None]] = []
     if args.host:
         targets = [(h, None) for h in args.host]
+    elif args.subnet:
+        print(f"Scanne Subnetz {args.subnet} nach ONVIF-Ports ...", file=sys.stderr)
+        targets = [(ip, port) for ip, port in scan_subnet(args.subnet)]
     else:
         print("Suche ONVIF-Kameras im Netz (WS-Discovery) ...", file=sys.stderr)
         for d in discover(timeout=args.discover_timeout):
             if d.get("address"):
                 targets.append((d["address"], d.get("onvif_port")))
+        # Fallback: wenn Multicast nichts liefert, lokales /24 scannen.
+        if not targets:
+            subnet = _local_subnet()
+            if subnet:
+                print(
+                    f"WS-Discovery leer - scanne stattdessen {subnet} ...",
+                    file=sys.stderr,
+                )
+                targets = [(ip, port) for ip, port in scan_subnet(subnet)]
         if not targets:
             print(
-                "Keine Kameras per Auto-Suche gefunden. Gib IPs mit --host an "
-                "(Multicast wird von manchen Netzen/Containern blockiert).",
+                "Keine Kameras gefunden. Gib IPs mit --host oder ein Subnetz "
+                "mit --subnet 192.168.1.0/24 an.",
                 file=sys.stderr,
             )
             return 1

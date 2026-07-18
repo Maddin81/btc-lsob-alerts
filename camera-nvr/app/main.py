@@ -8,7 +8,7 @@ import threading
 import time
 from contextlib import asynccontextmanager
 
-from fastapi import Depends, FastAPI, HTTPException, Query, Request, status
+from fastapi import Depends, FastAPI, HTTPException, Query, status
 from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from fastapi.staticfiles import StaticFiles
@@ -92,6 +92,19 @@ def _worker(camera_id: str) -> CameraWorker:
     if not w:
         raise HTTPException(status_code=404, detail="Kamera nicht gefunden")
     return w
+
+
+@app.get("/healthz")
+def healthz() -> JSONResponse:
+    """Unauthentifizierter Health-Check fuer Docker/Synology."""
+    workers = STATE.get("workers", {})
+    return JSONResponse(
+        {
+            "status": "ok",
+            "cameras": len(workers),
+            "connected": sum(1 for w in workers.values() if w.connected),
+        }
+    )
 
 
 @app.get("/api/cameras")
@@ -211,9 +224,13 @@ def events(camera_id: str, limit: int = 100, _: None = Depends(require_auth)) ->
 @app.get("/events-media/{path:path}")
 def events_media(path: str, _: None = Depends(require_auth)):
     cfg: AppConfig = STATE["config"]
-    # Path-Traversal verhindern.
-    full = os.path.normpath(os.path.join(cfg.events_dir, path))
-    if not full.startswith(os.path.abspath(cfg.events_dir)):
+    # Path-Traversal verhindern (auch Geschwister-Ordner wie /data/events-x).
+    events_root = os.path.abspath(cfg.events_dir)
+    full = os.path.abspath(os.path.join(events_root, path))
+    try:
+        if os.path.commonpath([full, events_root]) != events_root:
+            raise ValueError
+    except ValueError:
         raise HTTPException(status_code=400, detail="Ungueltiger Pfad")
     if not os.path.isfile(full):
         raise HTTPException(status_code=404, detail="Nicht gefunden")

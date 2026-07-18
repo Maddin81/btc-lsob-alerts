@@ -22,7 +22,21 @@ die Standard-Protokolle nutzt, die praktisch jede „ONVIF"-Kamera spricht.
   (bei den meisten Modellen im Kamera-Webinterface einschaltbar).
 - Docker + Docker Compose (auf Synology über **Container Manager** verfügbar).
 
-## Schnellstart
+## Einfachster Weg: Einrichtung komplett im Browser (kein Terminal)
+
+Wenn noch keine `config.yaml` existiert, startet die Software im **Einrichtungs-
+modus**: Öffne das Dashboard, gib die ONVIF-Zugangsdaten ein, klick auf
+**„Speichern & Starten"** — die Kameras werden automatisch gefunden, die Config
+wird geschrieben und die Live-Ansicht startet. Kein SSH, kein Bearbeiten von
+Dateien nötig.
+
+Auf einer Synology reicht dafür der **Container Manager** (grafisch):
+1. Ordner `camera-nvr/` in einen freigegebenen Ordner legen (z. B. `/docker`).
+2. Container Manager → **Projekt** → **Erstellen** → Pfad zum Ordner wählen
+   (nutzt die `docker-compose.yml`) → **Erstellen/Starten**.
+3. Browser: `http://<Synology-IP>:8080` → Assistent führt durch den Rest.
+
+## Schnellstart (per Terminal)
 
 ```bash
 # 1. Konfiguration anlegen

@@ -112,17 +112,54 @@ document.getElementById("acRun").addEventListener("click", async () => {
       .join("");
     out.innerHTML =
       `<div>${data.count} Kamera(s) erkannt:</div>${list}` +
-      `<p class="hint">Fertige Konfiguration — in <code>config/config.yaml</code> speichern und neu starten:</p>` +
-      `<textarea class="yaml" readonly>${esc(data.config_yaml)}</textarea>` +
-      `<button id="copyYaml">Config kopieren</button>`;
-    const btn = document.getElementById("copyYaml");
-    btn.addEventListener("click", () => {
-      navigator.clipboard.writeText(data.config_yaml).then(() => (btn.textContent = "Kopiert ✓"));
+      `<div class="actions"><button id="saveCfg" class="primary">Speichern &amp; Starten</button>` +
+      `<button id="toggleYaml">Config anzeigen</button></div>` +
+      `<div id="saveMsg" class="hint"></div>` +
+      `<textarea class="yaml" readonly hidden>${esc(data.config_yaml)}</textarea>`;
+
+    document.getElementById("toggleYaml").addEventListener("click", () => {
+      const ta = out.querySelector(".yaml");
+      ta.hidden = !ta.hidden;
+    });
+
+    document.getElementById("saveCfg").addEventListener("click", async () => {
+      const msg = document.getElementById("saveMsg");
+      msg.textContent = "Speichere …";
+      try {
+        const r = await api("/api/save-config", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ config_yaml: data.config_yaml }),
+        });
+        msg.innerHTML = `✅ Gespeichert – ${r.cameras} Kamera(s) aktiv. Lade Dashboard …`;
+        setTimeout(() => location.reload(), 1500);
+      } catch (e) {
+        msg.textContent = "Speichern fehlgeschlagen: " + e.message;
+      }
     });
   } catch (e) {
     out.textContent = "Fehlgeschlagen: " + e.message;
   }
 });
 
+async function checkSetup() {
+  try {
+    const st = await api("/api/state");
+    if (st.setup_mode || st.cameras === 0) {
+      // Erststart: Einrichtungs-Assistent automatisch oeffnen.
+      const banner = document.createElement("div");
+      banner.className = "banner";
+      banner.innerHTML =
+        "👋 <b>Willkommen!</b> Noch keine Kameras eingerichtet. " +
+        'Gib unten die ONVIF-Zugangsdaten ein — die Kameras werden automatisch gefunden.';
+      grid.before(banner);
+      document.getElementById("discoverDlg").showModal();
+    }
+  } catch (e) {
+    /* ignorieren */
+  }
+}
+
+checkSetup();
 refreshStatus();
 setInterval(refreshStatus, 3000);

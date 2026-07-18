@@ -8,7 +8,7 @@ import threading
 import time
 from contextlib import asynccontextmanager
 
-from fastapi import Depends, FastAPI, HTTPException, Query, status
+from fastapi import Body, Depends, FastAPI, HTTPException, Query, status
 from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from fastapi.staticfiles import StaticFiles
@@ -24,7 +24,31 @@ log = logging.getLogger("camera-nvr")
 CONFIG_PATH = os.environ.get("CAMERA_NVR_CONFIG", "/config/config.yaml")
 
 # Globaler Zustand, in lifespan gefuellt.
-STATE: dict = {"config": None, "workers": {}}
+STATE: dict = {"config": None, "workers": {}, "setup_mode": False}
+_reload_lock = threading.Lock()
+
+
+def _start_workers(cfg: AppConfig) -> dict:
+    workers: dict[str, CameraWorker] = {}
+    for cam in cfg.cameras:
+        w = CameraWorker(cam, cfg)
+        w.start()
+        workers[cam.id] = w
+    return workers
+
+
+def reload_from_config() -> int:
+    """Laedt config.yaml neu und startet die Kamera-Worker neu.
+    Gibt die Anzahl konfigurierter Kameras zurueck."""
+    with _reload_lock:
+        cfg = load_config(CONFIG_PATH)
+        for w in STATE.get("workers", {}).values():
+            w.stop()
+        STATE["config"] = cfg
+        STATE["workers"] = _start_workers(cfg)
+        STATE["setup_mode"] = False
+        os.makedirs(cfg.events_dir, exist_ok=True)
+        return len(cfg.cameras)
 
 
 def _cleanup_loop(cfg: AppConfig, stop: threading.Event) -> None:
@@ -45,25 +69,30 @@ def _cleanup_loop(cfg: AppConfig, stop: threading.Event) -> None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    cfg = load_config(CONFIG_PATH)
-    STATE["config"] = cfg
-    os.makedirs(cfg.events_dir, exist_ok=True)
-
-    workers: dict[str, CameraWorker] = {}
-    for cam in cfg.cameras:
-        w = CameraWorker(cam, cfg)
-        w.start()
-        workers[cam.id] = w
-    STATE["workers"] = workers
+    try:
+        cfg = load_config(CONFIG_PATH)
+        STATE["config"] = cfg
+        STATE["setup_mode"] = False
+        os.makedirs(cfg.events_dir, exist_ok=True)
+        STATE["workers"] = _start_workers(cfg)
+        log.info("Camera-NVR gestartet mit %d Kamera(s).", len(cfg.cameras))
+    except (FileNotFoundError, ValueError) as exc:
+        # Noch keine (gueltige) Konfiguration -> Einrichtungsmodus.
+        # Das Dashboard fuehrt dann grafisch durch die Kamera-Erkennung.
+        cfg = AppConfig()
+        STATE["config"] = cfg
+        STATE["workers"] = {}
+        STATE["setup_mode"] = True
+        os.makedirs(cfg.events_dir, exist_ok=True)
+        log.warning("Keine gueltige config.yaml (%s) - starte im Einrichtungsmodus.", exc)
 
     stop = threading.Event()
     threading.Thread(target=_cleanup_loop, args=(cfg, stop), daemon=True).start()
-    log.info("Camera-NVR gestartet mit %d Kamera(s).", len(workers))
 
     yield
 
     stop.set()
-    for w in workers.values():
+    for w in STATE.get("workers", {}).values():
         w.stop()
 
 
@@ -107,10 +136,43 @@ def healthz() -> JSONResponse:
     )
 
 
+@app.get("/api/state")
+def app_state(_: None = Depends(require_auth)) -> JSONResponse:
+    """Sagt dem Dashboard, ob es in den Einrichtungsmodus gehen soll."""
+    return JSONResponse(
+        {"setup_mode": bool(STATE.get("setup_mode")), "cameras": len(STATE.get("workers", {}))}
+    )
+
+
 @app.get("/api/cameras")
 def list_cameras(_: None = Depends(require_auth)) -> JSONResponse:
     workers = STATE["workers"]
     return JSONResponse([w.status() for w in workers.values()])
+
+
+@app.post("/api/save-config")
+def save_config(payload: dict = Body(...), _: None = Depends(require_auth)) -> JSONResponse:
+    """Schreibt die (per Assistent erzeugte) config.yaml und startet die
+    Kamera-Worker neu - ohne Container-Neustart, komplett aus dem Browser."""
+    yaml_text = (payload or {}).get("config_yaml", "")
+    if not yaml_text.strip():
+        raise HTTPException(status_code=400, detail="Leere Konfiguration")
+
+    os.makedirs(os.path.dirname(CONFIG_PATH) or ".", exist_ok=True)
+    tmp = CONFIG_PATH + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as fh:
+        fh.write(yaml_text)
+    # Vor dem Uebernehmen validieren.
+    try:
+        load_config(tmp)
+    except Exception as exc:  # noqa: BLE001
+        os.remove(tmp)
+        raise HTTPException(status_code=400, detail=f"Ungueltige Konfiguration: {exc}")
+
+    os.replace(tmp, CONFIG_PATH)
+    count = reload_from_config()
+    log.info("Konfiguration gespeichert, %d Kamera(s) aktiv.", count)
+    return JSONResponse({"ok": True, "cameras": count})
 
 
 @app.get("/api/stream/{camera_id}")

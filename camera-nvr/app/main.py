@@ -13,9 +13,10 @@ from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from fastapi.staticfiles import StaticFiles
 
+from .autodetect import DEFAULT_CREDENTIALS, build_config_yaml
 from .camera import CameraWorker
 from .config import AppConfig, load_config
-from .onvif_ptz import discover
+from .onvif_ptz import COMMON_ONVIF_PORTS, discover, probe_onvif
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 log = logging.getLogger("camera-nvr")
@@ -138,6 +139,58 @@ def ptz(
 @app.get("/api/discover")
 def discover_devices(_: None = Depends(require_auth)) -> JSONResponse:
     return JSONResponse({"devices": discover(timeout=4)})
+
+
+@app.post("/api/autoconfig")
+def autoconfig(
+    user: str = Query("", description="ONVIF-Benutzer"),
+    password: str = Query("", description="ONVIF-Passwort"),
+    host: str = Query("", description="Optional: einzelne IP statt Netz-Suche"),
+    _: None = Depends(require_auth),
+) -> JSONResponse:
+    """Sucht Kameras, fragt sie per ONVIF nach ihren echten RTSP-URLs ab und
+    liefert eine fertige config.yaml zurueck. Der Nutzer muss die RTSP-Pfade
+    also nicht selbst kennen."""
+    creds: list[tuple[str, str]] = []
+    if user:
+        creds.append((user, password))
+    creds += DEFAULT_CREDENTIALS
+
+    if host:
+        targets: list[tuple[str, int | None]] = [(host, None)]
+    else:
+        targets = [(d["address"], d.get("onvif_port")) for d in discover(timeout=4) if d.get("address")]
+
+    found: list[dict] = []
+    for h, port_hint in targets:
+        ports = [port_hint] + [p for p in COMMON_ONVIF_PORTS if p != port_hint] if port_hint else None
+        info = None
+        for u, pw in creds:
+            info = probe_onvif(h, u, pw, ports=ports)
+            if info:
+                info["username"], info["password"] = u, pw
+                break
+        if info:
+            found.append(info)
+
+    return JSONResponse(
+        {
+            "count": len(found),
+            "cameras": [
+                {
+                    "host": c["host"],
+                    "onvif_port": c["onvif_port"],
+                    "manufacturer": c.get("manufacturer", ""),
+                    "model": c.get("model", ""),
+                    "ptz": c["ptz"],
+                    "rtsp_main": c["rtsp_main"],
+                    "rtsp_sub": c["rtsp_sub"],
+                }
+                for c in found
+            ],
+            "config_yaml": build_config_yaml(found) if found else "",
+        }
+    )
 
 
 @app.get("/api/events/{camera_id}")

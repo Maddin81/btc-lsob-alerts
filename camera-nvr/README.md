@@ -39,9 +39,34 @@ docker compose up -d --build
 #    http://<IP-der-Synology>:8080
 ```
 
-### RTSP-URL herausfinden
+### RTSP-URL automatisch finden (empfohlen)
 
-Jeder Hersteller nutzt ein eigenes RTSP-Pfad-Schema. Häufige Beispiele:
+Du musst die RTSP-Pfade **nicht selbst raten**. Die Software fragt die Kameras
+per ONVIF direkt nach ihren echten Stream-URLs. Zwei Wege:
+
+**A) Im Dashboard:** Klick oben auf **„Kameras suchen"**, gib ONVIF-Benutzer +
+Passwort ein → du bekommst eine fertige `config.yaml` zum Kopieren.
+
+**B) Per Kommandozeile** (findet auch die IPs automatisch):
+
+```bash
+# Ganzes Netz durchsuchen und Config gleich schreiben:
+docker compose run --rm camera-nvr python -m app.autodetect \
+    --user admin --pass DEIN_PASSWORT -o /config/config.yaml
+
+# Oder gezielt einzelne IPs:
+docker compose run --rm camera-nvr python -m app.autodetect \
+    --host 192.168.1.50 --host 192.168.1.51 --user admin --pass DEIN_PASSWORT
+```
+
+Die Erkennung liefert automatisch: RTSP-Haupt- & Sub-Stream, ONVIF-Port,
+PTZ-Fähigkeit und einen Vorschlag für Name/ID. Falls du das Passwort nicht
+angibst, werden gängige Werks-Zugangsdaten durchprobiert.
+
+### RTSP-URL manuell herausfinden
+
+Falls die Auto-Erkennung mal nicht greift — jeder Hersteller nutzt ein eigenes
+RTSP-Pfad-Schema. Häufige Beispiele:
 
 | Hersteller (typisch) | Haupt-Stream | Sub-Stream |
 |---|---|---|

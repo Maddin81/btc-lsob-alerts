@@ -17,8 +17,18 @@
   <main id="grid" class="grid"></main>
 
   <dialog id="discoverDlg">
-    <h3>Gefundene ONVIF-Geraete</h3>
-    <div id="discoverResult">Suche laeuft &hellip;</div>
+    <h3>Kameras automatisch einrichten</h3>
+    <p class="hint">Gib die ONVIF-Zugangsdaten ein. Die Software findet die Kameras
+      im Netz und liest RTSP-Pfade, Port und PTZ automatisch aus.</p>
+    <div class="row">
+      <input id="acUser" placeholder="Benutzer (z.B. admin)" value="admin" />
+      <input id="acPass" type="password" placeholder="Passwort" />
+    </div>
+    <div class="row">
+      <input id="acHost" placeholder="Optional: einzelne IP (sonst ganzes Netz)" />
+      <button id="acRun">Suchen &amp; auslesen</button>
+    </div>
+    <div id="discoverResult"></div>
     <form method="dialog"><button>Schliessen</button></form>
   </dialog>
 

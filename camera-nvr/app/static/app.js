@@ -78,22 +78,49 @@ async function refreshStatus() {
   }
 }
 
-document.getElementById("discoverBtn").addEventListener("click", async () => {
-  const dlg = document.getElementById("discoverDlg");
+function esc(s) {
+  return String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+}
+
+document.getElementById("discoverBtn").addEventListener("click", () => {
+  document.getElementById("discoverResult").innerHTML = "";
+  document.getElementById("discoverDlg").showModal();
+});
+
+document.getElementById("acRun").addEventListener("click", async () => {
   const out = document.getElementById("discoverResult");
-  out.textContent = "Suche laeuft …";
-  dlg.showModal();
+  const user = document.getElementById("acUser").value.trim();
+  const pass = document.getElementById("acPass").value;
+  const host = document.getElementById("acHost").value.trim();
+  out.innerHTML = "⏳ Suche &amp; frage Kameras ab … (kann ~15 Sek. dauern)";
+  const q = new URLSearchParams({ user, password: pass, host }).toString();
   try {
-    const data = await api("/api/discover");
-    if (!data.devices.length) {
-      out.innerHTML = "Keine ONVIF-Geraete gefunden. Pruefe, ob die Kameras im selben Netz sind.";
+    const data = await api(`/api/autoconfig?${q}`, { method: "POST" });
+    if (!data.count) {
+      out.innerHTML =
+        "Keine Kamera erkannt. Prüfe Zugangsdaten und ob ONVIF an der Kamera aktiviert ist. " +
+        "Bei blockiertem Multicast eine konkrete IP eintragen.";
       return;
     }
-    out.innerHTML = data.devices
-      .map((d) => `<div>&#128225; <code>${d.address || "?"}</code></div>`)
+    const list = data.cameras
+      .map(
+        (c) =>
+          `<div class="found">&#128247; <b>${esc(c.manufacturer)} ${esc(c.model)}</b> ` +
+          `(<code>${esc(c.host)}:${c.onvif_port}</code>)${c.ptz ? " · PTZ" : ""}<br>` +
+          `<small>main:</small> <code>${esc(c.rtsp_main || "—")}</code></div>`
+      )
       .join("");
+    out.innerHTML =
+      `<div>${data.count} Kamera(s) erkannt:</div>${list}` +
+      `<p class="hint">Fertige Konfiguration — in <code>config/config.yaml</code> speichern und neu starten:</p>` +
+      `<textarea class="yaml" readonly>${esc(data.config_yaml)}</textarea>` +
+      `<button id="copyYaml">Config kopieren</button>`;
+    const btn = document.getElementById("copyYaml");
+    btn.addEventListener("click", () => {
+      navigator.clipboard.writeText(data.config_yaml).then(() => (btn.textContent = "Kopiert ✓"));
+    });
   } catch (e) {
-    out.textContent = "Suche fehlgeschlagen: " + e.message;
+    out.textContent = "Fehlgeschlagen: " + e.message;
   }
 });
 

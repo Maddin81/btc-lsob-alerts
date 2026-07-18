@@ -50,6 +50,12 @@ button:hover { border-color: var(--accent); }
 .ptz-mid { display: flex; gap: 6px; }
 .ptz button { min-width: 44px; }
 .zoom { display: flex; gap: 6px; margin-top: 4px; }
-dialog { background: var(--card); color: var(--text); border: 1px solid var(--line); border-radius: 12px; }
-#discoverResult { max-width: 420px; font-size: 14px; line-height: 1.5; }
-code { color: var(--accent); }
+dialog { background: var(--card); color: var(--text); border: 1px solid var(--line); border-radius: 12px; max-width: 560px; }
+dialog::backdrop { background: rgba(0,0,0,.6); }
+.hint { color: var(--muted); font-size: 13px; }
+.row { display: flex; gap: 8px; margin: 8px 0; }
+.row input { flex: 1; background: var(--bg); color: var(--text); border: 1px solid var(--line); border-radius: 8px; padding: 8px; }
+#discoverResult { max-width: 520px; font-size: 14px; line-height: 1.5; }
+.found { border-top: 1px solid var(--line); padding: 6px 0; word-break: break-all; }
+.yaml { width: 100%; height: 220px; background: var(--bg); color: var(--text); border: 1px solid var(--line); border-radius: 8px; font-family: monospace; font-size: 12px; }
+code { color: var(--accent); word-break: break-all; }

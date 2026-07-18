@@ -13,7 +13,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from fastapi.staticfiles import StaticFiles
 
-from .autodetect import DEFAULT_CREDENTIALS, build_config_yaml
+from .autodetect import DEFAULT_CREDENTIALS, build_config_yaml, scan_subnet, _local_subnet
 from .camera import CameraWorker
 from .config import AppConfig, load_config
 from .onvif_ptz import COMMON_ONVIF_PORTS, discover, probe_onvif
@@ -235,6 +235,11 @@ def autoconfig(
         targets: list[tuple[str, int | None]] = [(host, None)]
     else:
         targets = [(d["address"], d.get("onvif_port")) for d in discover(timeout=4) if d.get("address")]
+        # Fallback: findet Multicast nichts, das lokale /24-Subnetz scannen.
+        if not targets:
+            subnet = _local_subnet()
+            if subnet:
+                targets = list(scan_subnet(subnet))
 
     found: list[dict] = []
     for h, port_hint in targets:

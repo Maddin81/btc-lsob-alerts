@@ -10,7 +10,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 WORKDIR /app
 
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+# Build-Werkzeuge nur temporaer: netifaces (Abhaengigkeit von WSDiscovery) muss
+# beim Installieren eine C-Erweiterung kompilieren. Danach wieder entfernen,
+# damit das Image schlank bleibt.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends build-essential \
+    && pip install --no-cache-dir -r requirements.txt \
+    && apt-get purge -y build-essential \
+    && apt-get autoremove -y \
+    && rm -rf /var/lib/apt/lists/*
 
 COPY app ./app
 

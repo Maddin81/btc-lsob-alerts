@@ -35,11 +35,22 @@ jobs:
           if git fetch --depth 1 origin lsob-state 2>/dev/null; then
             git show FETCH_HEAD:state.json > state-data/state.json 2>/dev/null || rm -f state-data/state.json
             git show FETCH_HEAD:signals.csv > state-data/signals.csv 2>/dev/null || rm -f state-data/signals.csv
+            git show FETCH_HEAD:market_state.json > state-data/market_state.json 2>/dev/null || rm -f state-data/market_state.json
           fi
           if [ ! -s state-data/state.json ] && [ -f state.json ]; then
             cp state.json state-data/state.json
           fi
           find state-data -type f -exec sha256sum {} + | sort > /tmp/state-before.txt || true
+
+      # Markt-Radar zuerst: haelt Fear & Greed im geteilten State frisch, den der
+      # LSOB-Check dann als Sentiment-Konfluenz nutzt. Best effort -- ein Fehler
+      # hier darf den LSOB-Check nicht blockieren (drosselt sich selbst stuendlich).
+      - name: Run market radar
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          STATE_DIR: state-data
+        run: python market_check.py || echo "market_check nicht-fatal fehlgeschlagen"
 
       - name: Run LSOB check
         env:

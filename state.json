@@ -1,0 +1,852 @@
+{
+  "ADA|1d": {
+    "active_long": [],
+    "active_short": [],
+    "last_notified_close_time": 1784851199999,
+    "notified_entries": []
+  },
+  "ADA|1h": {
+    "active_long": [
+      [
+        0.1673,
+        0.1665
+      ]
+    ],
+    "active_short": [
+      [
+        0.1784,
+        0.1755
+      ]
+    ],
+    "last_notified_close_time": 1784883599999,
+    "notified_entries": [
+      "S1784746799999",
+      "L1784876399999"
+    ]
+  },
+  "ADA|1w": {
+    "active_long": [],
+    "active_short": [],
+    "last_notified_close_time": 1784505599999,
+    "notified_entries": []
+  },
+  "ADA|4h": {
+    "active_long": [],
+    "active_short": [],
+    "last_notified_close_time": 1784879999999,
+    "notified_entries": []
+  },
+  "ADA|8h": {
+    "active_long": [],
+    "active_short": [
+      [
+        0.1759,
+        0.1681
+      ]
+    ],
+    "last_notified_close_time": 1784879999999,
+    "notified_entries": [
+      "L1784015999999",
+      "S1784822399999"
+    ]
+  },
+  "AVAX|1d": {
+    "active_long": [],
+    "active_short": [],
+    "last_notified_close_time": 1784851199999,
+    "notified_entries": []
+  },
+  "AVAX|1h": {
+    "active_long": [],
+    "active_short": [],
+    "last_notified_close_time": 1784883599999,
+    "notified_entries": [
+      "L1784678399999"
+    ]
+  },
+  "AVAX|1w": {
+    "active_long": [],
+    "active_short": [
+      [
+        60.0,
+        52.5
+      ],
+      [
+        36.16,
+        27.07
+      ]
+    ],
+    "last_notified_close_time": 1784505599999,
+    "notified_entries": []
+  },
+  "AVAX|4h": {
+    "active_long": [],
+    "active_short": [],
+    "last_notified_close_time": 1784879999999,
+    "notified_entries": []
+  },
+  "AVAX|8h": {
+    "active_long": [],
+    "active_short": [],
+    "last_notified_close_time": 1784879999999,
+    "notified_entries": []
+  },
+  "Amazon|1d": {
+    "active_long": [],
+    "active_short": [],
+    "last_notified_close_time": 1784851200000,
+    "notified_entries": []
+  },
+  "Amazon|1h": {
+    "active_long": [],
+    "active_short": [],
+    "last_notified_close_time": 1784883600000,
+    "notified_entries": [
+      "S1784203200000"
+    ]
+  },
+  "Amazon|1w": {
+    "last_notified_close_time": 1784505600000
+  },
+  "Amazon|4h": {
+    "active_long": [],
+    "active_short": [],
+    "last_notified_close_time": 1784880000000,
+    "notified_entries": []
+  },
+  "Amazon|8h": {
+    "active_long": [],
+    "active_short": [],
+    "last_notified_close_time": 1784880000000,
+    "notified_entries": [
+      "S1784246400000"
+    ]
+  },
+  "Apple|1d": {
+    "active_long": [],
+    "active_short": [],
+    "last_notified_close_time": 1784851200000,
+    "notified_entries": []
+  },
+  "Apple|1h": {
+    "active_long": [],
+    "active_short": [],
+    "last_notified_close_time": 1784883600000,
+    "notified_entries": [
+      "S1784664000000"
+    ]
+  },
+  "Apple|1w": {
+    "last_notified_close_time": 1784505600000
+  },
+  "Apple|4h": {
+    "active_long": [],
+    "active_short": [],
+    "last_notified_close_time": 1784880000000,
+    "notified_entries": []
+  },
+  "Apple|8h": {
+    "active_long": [],
+    "active_short": [],
+    "last_notified_close_time": 1784880000000,
+    "notified_entries": []
+  },
+  "BNB|1d": {
+    "active_long": [],
+    "active_short": [
+      [
+        729.57,
+        674.07
+      ]
+    ],
+    "last_notified_close_time": 1784851199999,
+    "notified_entries": []
+  },
+  "BNB|1h": {
+    "active_long": [],
+    "active_short": [],
+    "last_notified_close_time": 1784883599999,
+    "notified_entries": []
+  },
+  "BNB|1w": {
+    "active_long": [],
+    "active_short": [],
+    "last_notified_close_time": 1784505599999,
+    "notified_entries": []
+  },
+  "BNB|4h": {
+    "active_long": [],
+    "active_short": [],
+    "last_notified_close_time": 1784879999999,
+    "notified_entries": []
+  },
+  "BNB|8h": {
+    "active_long": [],
+    "active_short": [],
+    "last_notified_close_time": 1784879999999,
+    "notified_entries": []
+  },
+  "BTC|1d": {
+    "active_long": [],
+    "active_short": [],
+    "last_notified_close_time": 1784851199999,
+    "notified_entries": [
+      "S1784159999999"
+    ]
+  },
+  "BTC|1h": {
+    "active_long": [],
+    "active_short": [],
+    "last_notified_close_time": 1784883599999,
+    "notified_entries": [
+      "L1784210399999"
+    ]
+  },
+  "BTC|1w": {
+    "active_long": [],
+    "active_short": [],
+    "last_notified_close_time": 1784505599999,
+    "notified_entries": []
+  },
+  "BTC|4h": {
+    "active_long": [],
+    "active_short": [],
+    "last_notified_close_time": 1784879999999,
+    "notified_entries": []
+  },
+  "BTC|8h": {
+    "active_long": [],
+    "active_short": [],
+    "last_notified_close_time": 1784879999999,
+    "notified_entries": []
+  },
+  "DOGE|1d": {
+    "active_long": [],
+    "active_short": [],
+    "last_notified_close_time": 1784851199999,
+    "notified_entries": []
+  },
+  "DOGE|1h": {
+    "active_long": [],
+    "active_short": [],
+    "last_notified_close_time": 1784883599999,
+    "notified_entries": []
+  },
+  "DOGE|1w": {
+    "active_long": [],
+    "active_short": [],
+    "last_notified_close_time": 1784505599999,
+    "notified_entries": []
+  },
+  "DOGE|4h": {
+    "active_long": [],
+    "active_short": [],
+    "last_notified_close_time": 1784879999999,
+    "notified_entries": []
+  },
+  "DOGE|8h": {
+    "active_long": [],
+    "active_short": [],
+    "last_notified_close_time": 1784879999999,
+    "notified_entries": []
+  },
+  "ETH|1d": {
+    "active_long": [],
+    "active_short": [],
+    "last_notified_close_time": 1784851199999,
+    "notified_entries": []
+  },
+  "ETH|1h": {
+    "active_long": [],
+    "active_short": [],
+    "last_notified_close_time": 1784883599999,
+    "notified_entries": []
+  },
+  "ETH|1w": {
+    "active_long": [],
+    "active_short": [],
+    "last_notified_close_time": 1784505599999,
+    "notified_entries": []
+  },
+  "ETH|4h": {
+    "active_long": [],
+    "active_short": [],
+    "last_notified_close_time": 1784879999999,
+    "notified_entries": []
+  },
+  "ETH|8h": {
+    "active_long": [],
+    "active_short": [],
+    "last_notified_close_time": 1784879999999,
+    "notified_entries": []
+  },
+  "Gold|1d": {
+    "active_long": [],
+    "active_short": [],
+    "last_notified_close_time": 1784851200000,
+    "notified_entries": []
+  },
+  "Gold|1h": {
+    "active_long": [],
+    "active_short": [
+      [
+        4150.86,
+        4141.81
+      ]
+    ],
+    "last_notified_close_time": 1784883600000,
+    "notified_entries": [
+      "S1784743200000"
+    ]
+  },
+  "Gold|1w": {
+    "last_notified_close_time": 1784505600000
+  },
+  "Gold|4h": {
+    "active_long": [],
+    "active_short": [],
+    "last_notified_close_time": 1784880000000,
+    "notified_entries": []
+  },
+  "Gold|8h": {
+    "active_long": [],
+    "active_short": [],
+    "last_notified_close_time": 1784880000000,
+    "notified_entries": [
+      "L1784016000000"
+    ]
+  },
+  "Google|1d": {
+    "active_long": [],
+    "active_short": [],
+    "last_notified_close_time": 1784851200000,
+    "notified_entries": []
+  },
+  "Google|1h": {
+    "active_long": [],
+    "active_short": [],
+    "last_notified_close_time": 1784883600000,
+    "notified_entries": [
+      "L1784239200000",
+      "S1784480400000"
+    ]
+  },
+  "Google|1w": {
+    "last_notified_close_time": 1784505600000
+  },
+  "Google|4h": {
+    "active_long": [],
+    "active_short": [],
+    "last_notified_close_time": 1784880000000,
+    "notified_entries": []
+  },
+  "Google|8h": {
+    "active_long": [],
+    "active_short": [],
+    "last_notified_close_time": 1784880000000,
+    "notified_entries": []
+  },
+  "HYPE|1d": {
+    "active_long": [],
+    "active_short": [],
+    "last_notified_close_time": 1784851200000,
+    "notified_entries": []
+  },
+  "HYPE|1h": {
+    "active_long": [],
+    "active_short": [],
+    "last_notified_close_time": 1784883600000,
+    "notified_entries": []
+  },
+  "HYPE|1w": {
+    "active_long": [],
+    "active_short": [],
+    "last_notified_close_time": 1784505600000,
+    "notified_entries": []
+  },
+  "HYPE|4h": {
+    "active_long": [],
+    "active_short": [],
+    "last_notified_close_time": 1784880000000,
+    "notified_entries": []
+  },
+  "HYPE|8h": {
+    "active_long": [],
+    "active_short": [],
+    "last_notified_close_time": 1784880000000,
+    "notified_entries": []
+  },
+  "LINK|1d": {
+    "active_long": [],
+    "active_short": [],
+    "last_notified_close_time": 1784851199999,
+    "notified_entries": []
+  },
+  "LINK|1h": {
+    "active_long": [],
+    "active_short": [],
+    "last_notified_close_time": 1784883599999,
+    "notified_entries": []
+  },
+  "LINK|1w": {
+    "active_long": [],
+    "active_short": [],
+    "last_notified_close_time": 1784505599999,
+    "notified_entries": []
+  },
+  "LINK|4h": {
+    "active_long": [],
+    "active_short": [],
+    "last_notified_close_time": 1784879999999,
+    "notified_entries": []
+  },
+  "LINK|8h": {
+    "active_long": [],
+    "active_short": [],
+    "last_notified_close_time": 1784879999999,
+    "notified_entries": []
+  },
+  "Microsoft|1d": {
+    "active_long": [],
+    "active_short": [
+      [
+        456.79,
+        438.09
+      ]
+    ],
+    "last_notified_close_time": 1784851200000,
+    "notified_entries": []
+  },
+  "Microsoft|1h": {
+    "active_long": [],
+    "active_short": [],
+    "last_notified_close_time": 1784883600000,
+    "notified_entries": []
+  },
+  "Microsoft|1w": {
+    "last_notified_close_time": 1784505600000
+  },
+  "Microsoft|4h": {
+    "active_long": [],
+    "active_short": [],
+    "last_notified_close_time": 1784880000000,
+    "notified_entries": [
+      "S1784620800000"
+    ]
+  },
+  "Microsoft|8h": {
+    "active_long": [],
+    "active_short": [],
+    "last_notified_close_time": 1784880000000,
+    "notified_entries": []
+  },
+  "Monero|1d": {
+    "active_long": [],
+    "active_short": [],
+    "last_notified_close_time": 1784851200000,
+    "notified_entries": []
+  },
+  "Monero|1h": {
+    "active_long": [],
+    "active_short": [],
+    "last_notified_close_time": 1784883600000,
+    "notified_entries": [
+      "S1784242800000"
+    ]
+  },
+  "Monero|1w": {
+    "active_long": [],
+    "active_short": [],
+    "last_notified_close_time": 1784505600000,
+    "notified_entries": []
+  },
+  "Monero|4h": {
+    "active_long": [],
+    "active_short": [],
+    "last_notified_close_time": 1784880000000,
+    "notified_entries": []
+  },
+  "Monero|8h": {
+    "active_long": [],
+    "active_short": [],
+    "last_notified_close_time": 1784880000000,
+    "notified_entries": []
+  },
+  "NEAR|1d": {
+    "active_long": [],
+    "active_short": [],
+    "last_notified_close_time": 1784851199999,
+    "notified_entries": []
+  },
+  "NEAR|1h": {
+    "active_long": [],
+    "active_short": [],
+    "last_notified_close_time": 1784883599999,
+    "notified_entries": [
+      "L1784199599999"
+    ]
+  },
+  "NEAR|1w": {
+    "active_long": [],
+    "active_short": [],
+    "last_notified_close_time": 1784505599999,
+    "notified_entries": []
+  },
+  "NEAR|4h": {
+    "active_long": [],
+    "active_short": [
+      [
+        2.002,
+        1.948
+      ]
+    ],
+    "last_notified_close_time": 1784879999999,
+    "notified_entries": [
+      "S1784649599999"
+    ]
+  },
+  "NEAR|8h": {
+    "active_long": [],
+    "active_short": [],
+    "last_notified_close_time": 1784879999999,
+    "notified_entries": []
+  },
+  "Nvidia|1d": {
+    "active_long": [],
+    "active_short": [],
+    "last_notified_close_time": 1784851200000,
+    "notified_entries": []
+  },
+  "Nvidia|1h": {
+    "active_long": [],
+    "active_short": [],
+    "last_notified_close_time": 1784883600000,
+    "notified_entries": [
+      "L1784142000000"
+    ]
+  },
+  "Nvidia|1w": {
+    "last_notified_close_time": 1784505600000
+  },
+  "Nvidia|4h": {
+    "active_long": [],
+    "active_short": [],
+    "last_notified_close_time": 1784880000000,
+    "notified_entries": []
+  },
+  "Nvidia|8h": {
+    "active_long": [],
+    "active_short": [],
+    "last_notified_close_time": 1784880000000,
+    "notified_entries": []
+  },
+  "Rohoel|1d": {
+    "active_long": [],
+    "active_short": [],
+    "last_notified_close_time": 1784851200000,
+    "notified_entries": []
+  },
+  "Rohoel|1h": {
+    "active_long": [],
+    "active_short": [],
+    "last_notified_close_time": 1784883600000,
+    "notified_entries": []
+  },
+  "Rohoel|1w": {
+    "last_notified_close_time": 1784505600000
+  },
+  "Rohoel|4h": {
+    "active_long": [],
+    "active_short": [],
+    "last_notified_close_time": 1784880000000,
+    "notified_entries": []
+  },
+  "Rohoel|8h": {
+    "active_long": [],
+    "active_short": [],
+    "last_notified_close_time": 1784880000000,
+    "notified_entries": []
+  },
+  "SOL|1d": {
+    "active_long": [],
+    "active_short": [
+      [
+        95.99,
+        90.27
+      ]
+    ],
+    "last_notified_close_time": 1784851199999,
+    "notified_entries": []
+  },
+  "SOL|1h": {
+    "active_long": [],
+    "active_short": [],
+    "last_notified_close_time": 1784883599999,
+    "notified_entries": []
+  },
+  "SOL|1w": {
+    "active_long": [],
+    "active_short": [],
+    "last_notified_close_time": 1784505599999,
+    "notified_entries": []
+  },
+  "SOL|4h": {
+    "active_long": [],
+    "active_short": [],
+    "last_notified_close_time": 1784879999999,
+    "notified_entries": []
+  },
+  "SOL|8h": {
+    "active_long": [],
+    "active_short": [],
+    "last_notified_close_time": 1784879999999,
+    "notified_entries": []
+  },
+  "SUI|1d": {
+    "active_long": [],
+    "active_short": [],
+    "last_notified_close_time": 1784851199999,
+    "notified_entries": []
+  },
+  "SUI|1h": {
+    "active_long": [],
+    "active_short": [],
+    "last_notified_close_time": 1784883599999,
+    "notified_entries": []
+  },
+  "SUI|1w": {
+    "active_long": [],
+    "active_short": [],
+    "last_notified_close_time": 1784505599999,
+    "notified_entries": []
+  },
+  "SUI|4h": {
+    "active_long": [],
+    "active_short": [],
+    "last_notified_close_time": 1784879999999,
+    "notified_entries": []
+  },
+  "SUI|8h": {
+    "active_long": [],
+    "active_short": [],
+    "last_notified_close_time": 1784879999999,
+    "notified_entries": []
+  },
+  "Silber|1d": {
+    "active_long": [],
+    "active_short": [
+      [
+        96.12,
+        86.53
+      ],
+      [
+        88.48,
+        82.91
+      ]
+    ],
+    "last_notified_close_time": 1784851200000,
+    "notified_entries": []
+  },
+  "Silber|1h": {
+    "active_long": [],
+    "active_short": [
+      [
+        60.37,
+        59.98
+      ]
+    ],
+    "last_notified_close_time": 1784883600000,
+    "notified_entries": [
+      "S1784739600000"
+    ]
+  },
+  "Silber|1w": {
+    "last_notified_close_time": 1784505600000
+  },
+  "Silber|4h": {
+    "active_long": [],
+    "active_short": [],
+    "last_notified_close_time": 1784880000000,
+    "notified_entries": []
+  },
+  "Silber|8h": {
+    "active_long": [],
+    "active_short": [],
+    "last_notified_close_time": 1784880000000,
+    "notified_entries": []
+  },
+  "SpaceX|1d": {
+    "active_long": [],
+    "active_short": [],
+    "last_notified_close_time": 1784851200000,
+    "notified_entries": []
+  },
+  "SpaceX|1h": {
+    "active_long": [],
+    "active_short": [
+      [
+        129.13,
+        127.54
+      ],
+      [
+        119.09,
+        117.16
+      ]
+    ],
+    "last_notified_close_time": 1784883600000,
+    "notified_entries": [
+      "S1784656800000",
+      "S1784840400000"
+    ]
+  },
+  "SpaceX|1w": {
+    "last_notified_close_time": 1784505600000
+  },
+  "SpaceX|4h": {
+    "active_long": [],
+    "active_short": [],
+    "last_notified_close_time": 1784880000000,
+    "notified_entries": []
+  },
+  "SpaceX|8h": {
+    "active_long": [],
+    "active_short": [],
+    "last_notified_close_time": 1784880000000,
+    "notified_entries": []
+  },
+  "TRX|1d": {
+    "active_long": [],
+    "active_short": [],
+    "last_notified_close_time": 1784851199999,
+    "notified_entries": []
+  },
+  "TRX|1h": {
+    "active_long": [],
+    "active_short": [],
+    "last_notified_close_time": 1784883599999,
+    "notified_entries": [
+      "S1784123999999",
+      "L1784739599999"
+    ]
+  },
+  "TRX|1w": {
+    "active_long": [],
+    "active_short": [],
+    "last_notified_close_time": 1784505599999,
+    "notified_entries": []
+  },
+  "TRX|4h": {
+    "active_long": [],
+    "active_short": [],
+    "last_notified_close_time": 1784879999999,
+    "notified_entries": []
+  },
+  "TRX|8h": {
+    "active_long": [],
+    "active_short": [],
+    "last_notified_close_time": 1784879999999,
+    "notified_entries": [
+      "S1784735999999"
+    ]
+  },
+  "Take-Two|1d": {
+    "last_notified_close_time": 1784851200000
+  },
+  "Take-Two|1h": {
+    "active_long": [],
+    "active_short": [],
+    "last_notified_close_time": 1784883600000,
+    "notified_entries": []
+  },
+  "Take-Two|1w": {
+    "last_notified_close_time": 1784505600000
+  },
+  "Take-Two|4h": {
+    "active_long": [],
+    "active_short": [],
+    "last_notified_close_time": 1784880000000,
+    "notified_entries": []
+  },
+  "Take-Two|8h": {
+    "active_long": [],
+    "active_short": [],
+    "last_notified_close_time": 1784880000000,
+    "notified_entries": []
+  },
+  "XLM|1d": {
+    "active_long": [],
+    "active_short": [],
+    "last_notified_close_time": 1784851199999,
+    "notified_entries": []
+  },
+  "XLM|1h": {
+    "active_long": [],
+    "active_short": [],
+    "last_notified_close_time": 1784883599999,
+    "notified_entries": [
+      "L1784537999999"
+    ]
+  },
+  "XLM|1w": {
+    "active_long": [],
+    "active_short": [],
+    "last_notified_close_time": 1784505599999,
+    "notified_entries": []
+  },
+  "XLM|4h": {
+    "active_long": [],
+    "active_short": [],
+    "last_notified_close_time": 1784879999999,
+    "notified_entries": []
+  },
+  "XLM|8h": {
+    "active_long": [],
+    "active_short": [
+      [
+        0.2443,
+        0.2301
+      ]
+    ],
+    "last_notified_close_time": 1784879999999,
+    "notified_entries": []
+  },
+  "XRP|1d": {
+    "active_long": [],
+    "active_short": [
+      [
+        1.607,
+        1.4941
+      ]
+    ],
+    "last_notified_close_time": 1784851199999,
+    "notified_entries": []
+  },
+  "XRP|1h": {
+    "active_long": [],
+    "active_short": [],
+    "last_notified_close_time": 1784883599999,
+    "notified_entries": []
+  },
+  "XRP|1w": {
+    "active_long": [],
+    "active_short": [],
+    "last_notified_close_time": 1784505599999,
+    "notified_entries": []
+  },
+  "XRP|4h": {
+    "active_long": [],
+    "active_short": [],
+    "last_notified_close_time": 1784879999999,
+    "notified_entries": []
+  },
+  "XRP|8h": {
+    "active_long": [],
+    "active_short": [],
+    "last_notified_close_time": 1784879999999,
+    "notified_entries": []
+  },
+  "_errors": {},
+  "_meta": {
+    "last_weekly_report": "2026-07-19"
+  }
+}

@@ -8,14 +8,25 @@ import threading
 import time
 from contextlib import asynccontextmanager
 
+import yaml
+
 from fastapi import Body, Depends, FastAPI, HTTPException, Query, status
 from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from fastapi.staticfiles import StaticFiles
 
-from .autodetect import DEFAULT_CREDENTIALS, build_config_yaml, scan_subnet, _local_subnet
+from .autodetect import DEFAULT_CREDENTIALS, camera_entry, scan_subnet, _local_subnet
 from .camera import CameraWorker
-from .config import AppConfig, load_config
+from .config import (
+    AppConfig,
+    dump_raw,
+    load_raw,
+    normalize_camera,
+    parse_config,
+    save_raw,
+    slugify,
+    unique_id,
+)
 from .onvif_ptz import COMMON_ONVIF_PORTS, discover, probe_onvif
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
@@ -24,37 +35,80 @@ log = logging.getLogger("camera-nvr")
 CONFIG_PATH = os.environ.get("CAMERA_NVR_CONFIG", "/config/config.yaml")
 
 # Globaler Zustand, in lifespan gefuellt.
-STATE: dict = {"config": None, "workers": {}, "setup_mode": False}
+# "raw" ist der unveraenderte YAML-Baum (mit ${VAR}), "config" die aufgeloeste
+# Fassung fuer die Laufzeit.
+STATE: dict = {"config": None, "raw": None, "workers": {}, "setup_mode": False}
 _reload_lock = threading.Lock()
 
 
-def _start_workers(cfg: AppConfig) -> dict:
-    workers: dict[str, CameraWorker] = {}
+def _apply(cfg: AppConfig) -> int:
+    """Uebernimmt eine neue Konfiguration und faehrt NUR die Kameras neu an,
+    die sich geaendert haben - die uebrigen Live-Bilder laufen weiter."""
+    old: dict[str, CameraWorker] = STATE.get("workers", {})
+    new: dict[str, CameraWorker] = {}
+
     for cam in cfg.cameras:
-        w = CameraWorker(cam, cfg)
-        w.start()
-        workers[cam.id] = w
-    return workers
+        if not cam.enabled:
+            continue
+        w = old.get(cam.id)
+        if w is not None and w.cam == cam:
+            w.app_cfg = cfg  # z.B. geaenderter Alarm-Cooldown
+            new[cam.id] = w
+            continue
+        if w is not None:
+            w.stop()
+        nw = CameraWorker(cam, cfg)
+        nw.start()
+        new[cam.id] = nw
+
+    for cid, w in old.items():
+        if cid not in new:
+            w.stop()
+
+    STATE["config"] = cfg
+    STATE["workers"] = new
+    STATE["setup_mode"] = not cfg.cameras
+    try:
+        os.makedirs(cfg.events_dir, exist_ok=True)
+    except OSError as exc:
+        # Kein Grund, den Dienst nicht zu starten - nur Ereignis-Snapshots
+        # koennen dann nicht abgelegt werden.
+        log.warning("Ereignis-Ordner %s nicht anlegbar: %s", cfg.events_dir, exc)
+    return len(new)
 
 
 def reload_from_config() -> int:
-    """Laedt config.yaml neu und startet die Kamera-Worker neu.
-    Gibt die Anzahl konfigurierter Kameras zurueck."""
+    """Liest config.yaml neu von der Platte und uebernimmt sie."""
     with _reload_lock:
-        cfg = load_config(CONFIG_PATH)
-        for w in STATE.get("workers", {}).values():
-            w.stop()
-        STATE["config"] = cfg
-        STATE["workers"] = _start_workers(cfg)
-        STATE["setup_mode"] = False
-        os.makedirs(cfg.events_dir, exist_ok=True)
-        return len(cfg.cameras)
+        raw = load_raw(CONFIG_PATH)
+        STATE["raw"] = raw
+        return _apply(parse_config(raw))
 
 
-def _cleanup_loop(cfg: AppConfig, stop: threading.Event) -> None:
+def _save_and_apply(raw: dict) -> int:
+    """Schreibt den geaenderten YAML-Baum und uebernimmt ihn sofort."""
+    with _reload_lock:
+        try:
+            cfg = parse_config(raw)
+        except (ValueError, KeyError, TypeError) as exc:
+            raise HTTPException(status_code=400, detail=f"Ungueltige Konfiguration: {exc}")
+        save_raw(CONFIG_PATH, raw)
+        STATE["raw"] = raw
+        return _apply(cfg)
+
+
+def _raw_cameras() -> list[dict]:
+    raw = STATE.get("raw") or load_raw(CONFIG_PATH)
+    STATE["raw"] = raw
+    raw.setdefault("cameras", [])
+    return raw["cameras"]
+
+
+def _cleanup_loop(_cfg: AppConfig, stop: threading.Event) -> None:
     """Loescht alte Ereignis-Snapshots gemaess retention_days."""
     while not stop.wait(3600):  # stuendlich pruefen
-        if cfg.retention_days <= 0:
+        cfg: AppConfig = STATE["config"]  # kann sich zur Laufzeit aendern
+        if not cfg or cfg.retention_days <= 0:
             continue
         cutoff = time.time() - cfg.retention_days * 86400
         for root, _dirs, files in os.walk(cfg.events_dir):
@@ -70,22 +124,18 @@ def _cleanup_loop(cfg: AppConfig, stop: threading.Event) -> None:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     try:
-        cfg = load_config(CONFIG_PATH)
-        STATE["config"] = cfg
-        STATE["setup_mode"] = False
-        os.makedirs(cfg.events_dir, exist_ok=True)
-        STATE["workers"] = _start_workers(cfg)
-        log.info("Camera-NVR gestartet mit %d Kamera(s).", len(cfg.cameras))
-    except (FileNotFoundError, ValueError) as exc:
+        count = reload_from_config()
+        log.info("Camera-NVR gestartet mit %d aktiven Kamera(s).", count)
+    except (OSError, ValueError, KeyError, TypeError) as exc:
         # Noch keine (gueltige) Konfiguration -> Einrichtungsmodus.
         # Das Dashboard fuehrt dann grafisch durch die Kamera-Erkennung.
-        cfg = AppConfig()
-        STATE["config"] = cfg
+        STATE["raw"] = None
+        STATE["config"] = AppConfig()
         STATE["workers"] = {}
         STATE["setup_mode"] = True
-        os.makedirs(cfg.events_dir, exist_ok=True)
         log.warning("Keine gueltige config.yaml (%s) - starte im Einrichtungsmodus.", exc)
 
+    cfg: AppConfig = STATE["config"]
     stop = threading.Event()
     threading.Thread(target=_cleanup_loop, args=(cfg, stop), daemon=True).start()
 
@@ -146,31 +196,105 @@ def app_state(_: None = Depends(require_auth)) -> JSONResponse:
 
 @app.get("/api/cameras")
 def list_cameras(_: None = Depends(require_auth)) -> JSONResponse:
+    """Laufzeit-Status aller AKTIVEN Kameras (fuer das Live-Gitter)."""
     workers = STATE["workers"]
     return JSONResponse([w.status() for w in workers.values()])
 
 
+@app.get("/api/config/cameras")
+def config_cameras(_: None = Depends(require_auth)) -> JSONResponse:
+    """Alle KONFIGURIERTEN Kameras - auch abgeschaltete. Grundlage der
+    Verwaltungsliste. Passwoerter werden nicht ausgeliefert."""
+    out = []
+    for c in _raw_cameras():
+        entry = {k: v for k, v in c.items() if k != "password"}
+        entry["has_password"] = bool(c.get("password"))
+        out.append(entry)
+    return JSONResponse({"cameras": out})
+
+
+@app.post("/api/config/cameras")
+def add_camera(payload: dict = Body(...), _: None = Depends(require_auth)) -> JSONResponse:
+    """Eine einzelne Kamera hinzufuegen - beliebig oft wiederholbar, jede mit
+    eigenen Zugangsdaten, eigenem Port und eigenem Bildformat."""
+    cams = _raw_cameras()
+    taken = {str(c.get("id", "")) for c in cams}
+    data = dict(payload or {})
+    if not str(data.get("id", "")).strip():
+        data["id"] = unique_id(slugify(str(data.get("name", "")), "cam"), taken)
+    try:
+        cam = normalize_camera(data, taken)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+    raw = STATE["raw"]
+    raw["cameras"] = cams + [cam]
+    count = _save_and_apply(raw)
+    log.info("Kamera '%s' hinzugefuegt, %d aktiv.", cam["id"], count)
+    return JSONResponse({"ok": True, "camera": cam["id"], "cameras": count})
+
+
+@app.put("/api/config/cameras/{camera_id}")
+def update_camera(camera_id: str, payload: dict = Body(...), _: None = Depends(require_auth)) -> JSONResponse:
+    cams = _raw_cameras()
+    idx = next((i for i, c in enumerate(cams) if str(c.get("id")) == camera_id), None)
+    if idx is None:
+        raise HTTPException(status_code=404, detail="Kamera nicht gefunden")
+
+    merged = dict(cams[idx])
+    merged.update({k: v for k, v in (payload or {}).items() if v is not None})
+    # Leeres Passwortfeld im Formular = Passwort unveraendert lassen.
+    if not str((payload or {}).get("password", "")).strip():
+        merged["password"] = cams[idx].get("password", "")
+    merged["id"] = camera_id
+
+    taken = {str(c.get("id")) for c in cams} - {camera_id}
+    try:
+        cam = normalize_camera(merged, taken)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+    raw = STATE["raw"]
+    raw["cameras"] = cams[:idx] + [cam] + cams[idx + 1:]
+    count = _save_and_apply(raw)
+    log.info("Kamera '%s' geaendert, %d aktiv.", camera_id, count)
+    return JSONResponse({"ok": True, "camera": camera_id, "cameras": count})
+
+
+@app.delete("/api/config/cameras/{camera_id}")
+def delete_camera(camera_id: str, _: None = Depends(require_auth)) -> JSONResponse:
+    cams = _raw_cameras()
+    rest = [c for c in cams if str(c.get("id")) != camera_id]
+    if len(rest) == len(cams):
+        raise HTTPException(status_code=404, detail="Kamera nicht gefunden")
+    raw = STATE["raw"]
+    raw["cameras"] = rest
+    count = _save_and_apply(raw)
+    log.info("Kamera '%s' entfernt, %d aktiv.", camera_id, count)
+    return JSONResponse({"ok": True, "cameras": count})
+
+
+@app.get("/api/config/yaml")
+def config_yaml(_: None = Depends(require_auth)) -> JSONResponse:
+    """Die aktuelle config.yaml zum Ansehen (Passwoerter wie gespeichert -
+    bei ${VAR}-Nutzung also nur die Platzhalter)."""
+    return JSONResponse({"config_yaml": dump_raw(STATE.get("raw") or load_raw(CONFIG_PATH))})
+
+
 @app.post("/api/save-config")
 def save_config(payload: dict = Body(...), _: None = Depends(require_auth)) -> JSONResponse:
-    """Schreibt die (per Assistent erzeugte) config.yaml und startet die
-    Kamera-Worker neu - ohne Container-Neustart, komplett aus dem Browser."""
+    """Komplette config.yaml ersetzen (Rohtext-Weg / Assistent)."""
     yaml_text = (payload or {}).get("config_yaml", "")
     if not yaml_text.strip():
         raise HTTPException(status_code=400, detail="Leere Konfiguration")
-
-    os.makedirs(os.path.dirname(CONFIG_PATH) or ".", exist_ok=True)
-    tmp = CONFIG_PATH + ".tmp"
-    with open(tmp, "w", encoding="utf-8") as fh:
-        fh.write(yaml_text)
-    # Vor dem Uebernehmen validieren.
     try:
-        load_config(tmp)
-    except Exception as exc:  # noqa: BLE001
-        os.remove(tmp)
-        raise HTTPException(status_code=400, detail=f"Ungueltige Konfiguration: {exc}")
+        raw = yaml.safe_load(yaml_text) or {}
+        if not isinstance(raw, dict):
+            raise ValueError("kein Objekt auf oberster Ebene")
+    except yaml.YAMLError as exc:
+        raise HTTPException(status_code=400, detail=f"YAML-Fehler: {exc}")
 
-    os.replace(tmp, CONFIG_PATH)
-    count = reload_from_config()
+    count = _save_and_apply(raw)
     log.info("Konfiguration gespeichert, %d Kamera(s) aktiv.", count)
     return JSONResponse({"ok": True, "cameras": count})
 
@@ -216,6 +340,42 @@ def discover_devices(_: None = Depends(require_auth)) -> JSONResponse:
     return JSONResponse({"devices": discover(timeout=4)})
 
 
+def _probe_with_credentials(
+    host: str, port_hint: int | None, creds: list[tuple[str, str]]
+) -> dict | None:
+    ports = None
+    if port_hint:
+        ports = [port_hint] + [p for p in COMMON_ONVIF_PORTS if p != port_hint]
+    for u, pw in creds:
+        info = probe_onvif(host, u, pw, ports=ports)
+        if info:
+            info["username"], info["password"] = u, pw
+            return info
+    return None
+
+
+@app.post("/api/probe")
+def probe(
+    host: str = Query(..., description="IP der Kamera"),
+    user: str = Query("", description="ONVIF-Benutzer"),
+    password: str = Query("", description="ONVIF-Passwort"),
+    onvif_port: int = Query(0, description="Optional: bekannter ONVIF-Port"),
+    _: None = Depends(require_auth),
+) -> JSONResponse:
+    """Fragt EINE Kamera per ONVIF ab und liefert fertige Felder fuers Formular.
+    So bekommt jede Kamera ihre eigenen Zugangsdaten, ihren eigenen Port und
+    ihr echtes Bildformat - genau das, was mit einem einzigen globalen
+    Assistenten nicht ging."""
+    creds = ([(user, password)] if user else []) + DEFAULT_CREDENTIALS
+    info = _probe_with_credentials(host, onvif_port or None, creds)
+    if not info:
+        raise HTTPException(
+            status_code=404,
+            detail="Keine ONVIF-Antwort. Zugangsdaten, Port und ob ONVIF an der Kamera aktiv ist pruefen.",
+        )
+    return JSONResponse({"ok": True, "camera": camera_entry(info)})
+
+
 @app.post("/api/autoconfig")
 def autoconfig(
     user: str = Query("", description="ONVIF-Benutzer"),
@@ -223,9 +383,9 @@ def autoconfig(
     host: str = Query("", description="Optional: einzelne IP statt Netz-Suche"),
     _: None = Depends(require_auth),
 ) -> JSONResponse:
-    """Sucht Kameras, fragt sie per ONVIF nach ihren echten RTSP-URLs ab und
-    liefert eine fertige config.yaml zurueck. Der Nutzer muss die RTSP-Pfade
-    also nicht selbst kennen."""
+    """Sucht Kameras im Netz und fragt sie per ONVIF nach ihren echten
+    RTSP-URLs ab. Liefert Vorschlaege - uebernommen wird erst auf Klick,
+    und zwar ERGAENZEND zu den schon eingerichteten Kameras."""
     creds: list[tuple[str, str]] = []
     if user:
         creds.append((user, password))
@@ -241,36 +401,51 @@ def autoconfig(
             if subnet:
                 targets = list(scan_subnet(subnet))
 
+    known_hosts = {str(c.get("host", "")) for c in _raw_cameras()}
     found: list[dict] = []
     for h, port_hint in targets:
-        ports = [port_hint] + [p for p in COMMON_ONVIF_PORTS if p != port_hint] if port_hint else None
-        info = None
-        for u, pw in creds:
-            info = probe_onvif(h, u, pw, ports=ports)
-            if info:
-                info["username"], info["password"] = u, pw
-                break
+        info = _probe_with_credentials(h, port_hint, creds)
         if info:
-            found.append(info)
+            entry = camera_entry(info)
+            entry["already_configured"] = entry["host"] in known_hosts
+            found.append(entry)
 
-    return JSONResponse(
-        {
-            "count": len(found),
-            "cameras": [
-                {
-                    "host": c["host"],
-                    "onvif_port": c["onvif_port"],
-                    "manufacturer": c.get("manufacturer", ""),
-                    "model": c.get("model", ""),
-                    "ptz": c["ptz"],
-                    "rtsp_main": c["rtsp_main"],
-                    "rtsp_sub": c["rtsp_sub"],
-                }
-                for c in found
-            ],
-            "config_yaml": build_config_yaml(found) if found else "",
-        }
-    )
+    return JSONResponse({"count": len(found), "cameras": found})
+
+
+@app.post("/api/config/cameras/bulk")
+def add_cameras_bulk(payload: dict = Body(...), _: None = Depends(require_auth)) -> JSONResponse:
+    """Mehrere gefundene Kameras auf einmal uebernehmen - ohne die bereits
+    eingerichteten zu verlieren."""
+    items = (payload or {}).get("cameras") or []
+    if not items:
+        raise HTTPException(status_code=400, detail="Keine Kameras uebergeben")
+
+    cams = _raw_cameras()
+    taken = {str(c.get("id", "")) for c in cams}
+    added: list[str] = []
+    errors: list[str] = []
+    for item in items:
+        data = dict(item)
+        if not str(data.get("id", "")).strip():
+            data["id"] = unique_id(slugify(str(data.get("name", "")), "cam"), taken)
+        try:
+            cam = normalize_camera(data, taken)
+        except ValueError as exc:
+            errors.append(f"{data.get('name') or data.get('host')}: {exc}")
+            continue
+        taken.add(cam["id"])
+        cams = cams + [cam]
+        added.append(cam["id"])
+
+    if not added:
+        raise HTTPException(status_code=400, detail="; ".join(errors) or "Nichts uebernommen")
+
+    raw = STATE["raw"]
+    raw["cameras"] = cams
+    count = _save_and_apply(raw)
+    log.info("%d Kamera(s) uebernommen, %d aktiv.", len(added), count)
+    return JSONResponse({"ok": True, "added": added, "errors": errors, "cameras": count})
 
 
 @app.get("/api/events/{camera_id}")

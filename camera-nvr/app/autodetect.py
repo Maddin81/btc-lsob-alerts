@@ -24,6 +24,7 @@ import re
 import socket
 import sys
 from concurrent.futures import ThreadPoolExecutor
+from math import gcd
 
 from .onvif_ptz import COMMON_ONVIF_PORTS, discover, probe_onvif
 
@@ -105,6 +106,53 @@ def _try_probe(host: str, port_hint: int | None, creds: list[tuple[str, str]]) -
     return None
 
 
+def _aspect_from_probe(info: dict) -> tuple[str, str]:
+    """Ermittelt aus den ONVIF-Profilen die Aufloesung des LIVE-Streams
+    (Sub-Stream, sonst Haupt-Stream). Gibt (aufloesung, seitenverhaeltnis)
+    als Text zurueck, z.B. ('1920x576', '10:3').
+
+    Das ist der Grund, warum ein festes 16:9 im Dashboard nicht reicht:
+    breite Kameras (z.B. Reolink-Substream 1920x576) wuerden sonst mit
+    dicken schwarzen Balken dargestellt.
+    """
+    live = info.get("rtsp_sub") or info.get("rtsp_main") or ""
+    profile = next((p for p in info.get("profiles", []) if p.get("rtsp") == live), None)
+    res = (profile or {}).get("resolution", "")
+    if "x" not in res:
+        return "", "auto"
+    try:
+        w, h = (int(x) for x in res.split("x", 1))
+    except ValueError:
+        return res, "auto"
+    if w <= 0 or h <= 0:
+        return res, "auto"
+    g = gcd(w, h)
+    return res, f"{w // g}:{h // g}"
+
+
+def camera_entry(info: dict) -> dict:
+    """Baut aus einer ONVIF-Antwort einen fertigen Datensatz fuers Formular
+    bzw. fuer POST /api/config/cameras."""
+    resolution, aspect = _aspect_from_probe(info)
+    name = " ".join(x for x in [info.get("manufacturer", ""), info.get("model", "")] if x)
+    return {
+        "name": name or info.get("host", "Kamera"),
+        "host": info.get("host", ""),
+        "onvif_port": info.get("onvif_port", 80),
+        "username": info.get("username", "admin"),
+        "password": info.get("password", ""),
+        "rtsp_main": info.get("rtsp_main", ""),
+        "rtsp_sub": info.get("rtsp_sub", ""),
+        "ptz": bool(info.get("ptz")),
+        "enabled": True,
+        # Gemessenes Format als Vorgabe; "auto" laesst den Worker messen.
+        "aspect": aspect,
+        "manufacturer": info.get("manufacturer", ""),
+        "model": info.get("model", ""),
+        "resolution": resolution,
+    }
+
+
 def build_config_yaml(cameras: list[dict]) -> str:
     lines: list[str] = []
     lines.append("# Automatisch erzeugt von app.autodetect.")
@@ -148,6 +196,9 @@ def build_config_yaml(cameras: list[dict]) -> str:
         lines.append(f'    rtsp_sub: "{cam.get("rtsp_sub", "")}"')
         lines.append(f'    onvif_port: {cam.get("onvif_port", 80)}')
         lines.append(f'    ptz: {"true" if cam.get("ptz") else "false"}')
+        lines.append("    enabled: true")
+        # Bildformat der Kachel: gemessen, sonst "auto" (Worker misst selbst).
+        lines.append(f'    aspect: "{_aspect_from_probe(cam)[1]}"')
         lines.append("    motion:")
         lines.append("      enabled: true")
         lines.append("      sensitivity_percent: 1.5")

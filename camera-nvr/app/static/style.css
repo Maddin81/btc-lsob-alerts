@@ -21,25 +21,43 @@ header {
   position: sticky; top: 0; background: var(--bg); z-index: 5;
 }
 h1 { font-size: 18px; margin: 0; }
+h4 { margin: 4px 0 10px; font-size: 15px; }
+.tools { display: flex; align-items: center; gap: 12px; }
+.switch { font-size: 13px; color: var(--muted); display: flex; align-items: center; gap: 6px; }
 button {
   background: var(--card); color: var(--text); border: 1px solid var(--line);
   border-radius: 8px; padding: 8px 12px; cursor: pointer; font-size: 14px;
 }
 button:hover { border-color: var(--accent); }
+button.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+button.primary:hover { filter: brightness(1.1); }
+button.danger { border-color: #5b2b2b; color: #ffb4b4; }
+button.danger:hover { border-color: var(--danger); }
+
+/* -- Live-Gitter ---------------------------------------------------------- */
 .grid {
   display: grid; gap: 14px; padding: 16px;
   grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+  align-items: start;
 }
 .card {
   background: var(--card); border: 1px solid var(--line);
   border-radius: 12px; overflow: hidden; display: flex; flex-direction: column;
 }
+/* Sehr breite Kameras (z.B. 1920x576) bekommen zwei Spalten, damit das Bild
+   nicht auf Briefmarkenhoehe schrumpft. Hochkant-Kameras bleiben einspaltig. */
+.card.wide { grid-column: span 2; }
+@media (max-width: 760px) { .card.wide { grid-column: span 1; } }
 .cam-title { display: flex; align-items: center; gap: 8px; padding: 10px 12px; font-weight: 600; }
-.dot { width: 10px; height: 10px; border-radius: 50%; background: var(--muted); }
+.cam-title .res { margin-left: auto; font-weight: 400; font-size: 12px; color: var(--muted); }
+.dot { width: 10px; height: 10px; border-radius: 50%; background: var(--muted); flex: none; }
 .dot.online { background: var(--ok); }
 .dot.offline { background: var(--danger); }
+/* Seitenverhaeltnis wird je Kamera per JS gesetzt (aspect_ratio aus der API).
+   16/9 ist nur der Rueckfall, solange noch kein Bild angekommen ist. */
 .video-wrap { position: relative; background: #000; aspect-ratio: 16/9; }
 .video { width: 100%; height: 100%; object-fit: contain; display: block; }
+body.fill .video { object-fit: cover; }
 .motion-badge {
   position: absolute; top: 8px; right: 8px; background: var(--danger);
   color: #fff; padding: 3px 8px; border-radius: 6px; font-size: 12px;
@@ -47,19 +65,48 @@ button:hover { border-color: var(--accent); }
 }
 .motion-badge.active { opacity: 1; }
 .ptz { padding: 10px; display: grid; justify-items: center; gap: 6px; }
+/* Muss NACH .ptz stehen: sonst gewinnt display:grid gegen das hidden-Attribut
+   und Kameras ohne PTZ zeigen trotzdem ein Steuerkreuz. */
+[hidden] { display: none !important; }
 .ptz-mid { display: flex; gap: 6px; }
 .ptz button { min-width: 44px; }
 .zoom { display: flex; gap: 6px; margin-top: 4px; }
+
+/* -- Dialog / Verwaltung -------------------------------------------------- */
 dialog { background: var(--card); color: var(--text); border: 1px solid var(--line); border-radius: 12px; max-width: 560px; }
+dialog.wide-dlg { max-width: 720px; width: calc(100vw - 32px); }
 dialog::backdrop { background: rgba(0,0,0,.6); }
 .hint { color: var(--muted); font-size: 13px; }
-.row { display: flex; gap: 8px; margin: 8px 0; }
-.row input { flex: 1; background: var(--bg); color: var(--text); border: 1px solid var(--line); border-radius: 8px; padding: 8px; }
-#discoverResult { max-width: 520px; font-size: 14px; line-height: 1.5; }
-.found { border-top: 1px solid var(--line); padding: 6px 0; word-break: break-all; }
-.yaml { width: 100%; height: 220px; background: var(--bg); color: var(--text); border: 1px solid var(--line); border-radius: 8px; font-family: monospace; font-size: 12px; }
+.row { display: flex; gap: 8px; margin: 8px 0; align-items: center; flex-wrap: wrap; }
+.row.checks { gap: 16px; }
+.close-row { margin-top: 14px; }
+input, select, textarea {
+  background: var(--bg); color: var(--text); border: 1px solid var(--line);
+  border-radius: 8px; padding: 8px; font-size: 14px; font-family: inherit;
+}
+input:focus, select:focus { outline: none; border-color: var(--accent); }
+
+.cam-list { margin: 10px 0; }
+.cam-row {
+  display: flex; align-items: center; gap: 10px; justify-content: space-between;
+  border-top: 1px solid var(--line); padding: 10px 0; font-size: 14px;
+}
+.cam-row.off { opacity: .55; }
+.cam-row-btns { display: flex; gap: 6px; flex: none; }
+
+form .grid2 {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 10px; margin-bottom: 10px;
+}
+form label { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--muted); }
+form label.full { display: flex; margin: 8px 0; }
+form label.inline { flex-direction: row; align-items: center; gap: 6px; color: var(--text); font-size: 14px; }
+form label small { font-weight: 400; }
+#camForm { border-top: 1px solid var(--line); padding-top: 12px; margin-top: 8px; }
+
+.found { display: flex; align-items: center; gap: 8px; border-top: 1px solid var(--line); padding: 8px 0; font-size: 14px; word-break: break-word; }
+.found input { flex: none; }
+.yaml { width: 100%; height: 220px; background: var(--bg); color: var(--text); border: 1px solid var(--line); border-radius: 8px; font-family: monospace; font-size: 12px; margin-top: 10px; }
 code { color: var(--accent); word-break: break-all; }
 .banner { margin: 14px 16px 0; padding: 12px 14px; background: #1f2a44; border: 1px solid var(--accent); border-radius: 10px; font-size: 14px; }
-.actions { display: flex; gap: 8px; margin: 10px 0; }
-button.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
-button.primary:hover { filter: brightness(1.1); }
+.actions { display: flex; gap: 8px; margin: 12px 0; align-items: center; flex-wrap: wrap; }

@@ -2,8 +2,11 @@
 # Beispiel-Konfiguration fuer die eigene Kamera-Software (Camera-NVR)
 #
 # Kopiere diese Datei nach  config.yaml  und trage deine Kameras ein.
-# Passwoerter koennen auch als Umgebungsvariable gesetzt werden, z.B.
-#   password: "${CAM1_PASS}"
+# ODER: einfach starten und alles im Browser unter "Kameras verwalten" anlegen -
+# die Software schreibt diese Datei dann selbst.
+#
+# Passwoerter gehoeren NICHT im Klartext hier rein, sondern als
+# Umgebungsvariable:   password: "${CAM_HAUSTUER_PASS}"   (siehe .env.example)
 # -----------------------------------------------------------------------------
 
 server:
@@ -35,23 +38,29 @@ notify:
   cooldown_seconds: 60
 
 # -----------------------------------------------------------------------------
-# Deine Kameras. Jede Kamera braucht mindestens eine RTSP-URL.
-# Fuer PTZ und Snapshots werden zusaetzlich die ONVIF-Zugangsdaten genutzt.
+# Kameras. Beliebig viele - jede mit EIGENEN Zugangsdaten, eigenem ONVIF-Port
+# und eigenem Bildformat.
+#
+#   aspect:  "auto"  = wird aus dem laufenden Stream gemessen (Standard)
+#            "16:9"  = uebliche Kamera
+#            "10:3"  = sehr breite Kamera (z.B. 1920x576)
+# Das Bildformat betrifft nur die Darstellung der Kachel im Dashboard.
 # -----------------------------------------------------------------------------
 cameras:
-  - id: "hof"
-    name: "Hof / Einfahrt"
-    host: "192.168.1.50"
+  - id: "haustuer"
+    name: "Haustuer"
+    host: "192.168.1.46"
     username: "admin"
-    password: "${CAM1_PASS}"
-    # Haupt-Stream (hohe Aufloesung) - optional, fuer spaetere Aufnahme.
-    rtsp_main: "rtsp://admin:${CAM1_PASS}@192.168.1.50:554/Streaming/Channels/101"
+    password: "${CAM_HAUSTUER_PASS}"
+    # Haupt-Stream (hohe Aufloesung).
+    rtsp_main: "rtsp://admin:${CAM_HAUSTUER_PASS}@192.168.1.46:554/Streaming/Channels/101"
     # Sub-Stream (niedrige Aufloesung) - wird fuer Live-Grid + Bewegungserkennung
     # verwendet. Spart massiv CPU. Wenn leer, wird rtsp_main benutzt.
-    rtsp_sub: "rtsp://admin:${CAM1_PASS}@192.168.1.50:554/Streaming/Channels/102"
-    # ONVIF-Port (haeufig 80, manchmal 8000 oder 2020).
-    onvif_port: 80
-    ptz: true
+    rtsp_sub: "rtsp://admin:${CAM_HAUSTUER_PASS}@192.168.1.46:554/Streaming/Channels/102"
+    onvif_port: 8999
+    ptz: false
+    enabled: true
+    aspect: "16:9"
     motion:
       enabled: true
       # Empfindlichkeit: kleinere Zahl = empfindlicher.
@@ -60,16 +69,37 @@ cameras:
       # Bereich (x,y,w,h in Prozent 0-100) auf den geachtet wird. Leer = ganzes Bild.
       region: []
 
-  - id: "tuer"
-    name: "Haustuer"
-    host: "192.168.1.51"
+  - id: "carport"
+    name: "Carport"
+    host: "192.168.1.31"
     username: "admin"
-    password: "${CAM2_PASS}"
-    rtsp_main: "rtsp://admin:${CAM2_PASS}@192.168.1.51:554/live/ch0"
-    rtsp_sub: "rtsp://admin:${CAM2_PASS}@192.168.1.51:554/live/ch1"
+    password: "${CAM_CARPORT_PASS}"
+    # Reolink: Haupt-Stream 5120x1552 (h265), Sub-Stream 1920x576 (h264).
+    rtsp_main: "rtsp://admin:${CAM_CARPORT_PASS}@192.168.1.31:554/h264Preview_01_main"
+    rtsp_sub: "rtsp://admin:${CAM_CARPORT_PASS}@192.168.1.31:554/h264Preview_01_sub"
     onvif_port: 8000
     ptz: false
+    enabled: true
+    # Diese Kamera ist deutlich breiter als 16:9 (1920x576 = 10:3).
+    # Die Kachel bekommt dadurch im Dashboard automatisch zwei Spalten.
+    aspect: "10:3"
     motion:
       enabled: true
       sensitivity_percent: 2.0
+      region: []
+
+  - id: "garten"
+    name: "Garten"
+    host: "192.168.1.160"
+    username: "admin"
+    password: "${CAM_GARTEN_PASS}"
+    rtsp_main: "rtsp://admin:${CAM_GARTEN_PASS}@192.168.1.160:554/Streaming/Channels/101"
+    rtsp_sub: "rtsp://admin:${CAM_GARTEN_PASS}@192.168.1.160:554/Streaming/Channels/102"
+    onvif_port: 80
+    ptz: false
+    enabled: true
+    aspect: "16:9"
+    motion:
+      enabled: true
+      sensitivity_percent: 1.5
       region: []

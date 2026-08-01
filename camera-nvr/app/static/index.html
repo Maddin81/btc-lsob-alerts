@@ -10,31 +10,95 @@
   <header>
     <h1>&#128247; Camera-NVR</h1>
     <div class="tools">
-      <button id="discoverBtn" title="ONVIF-Kameras im Netz suchen">Kameras suchen</button>
+      <label class="switch"><input type="checkbox" id="fitToggle" /> Bild fuellen</label>
+      <button id="manageBtn" title="Kameras hinzufuegen, aendern, entfernen">Kameras verwalten</button>
     </div>
   </header>
 
   <main id="grid" class="grid"></main>
 
-  <dialog id="discoverDlg">
-    <h3>Kameras automatisch einrichten</h3>
-    <p class="hint">Gib die ONVIF-Zugangsdaten ein. Die Software findet die Kameras
-      im Netz und liest RTSP-Pfade, Port und PTZ automatisch aus.</p>
-    <div class="row">
-      <input id="acUser" placeholder="Benutzer (z.B. admin)" value="admin" />
-      <input id="acPass" type="password" placeholder="Passwort" />
+  <!-- Verwaltung: Liste aller Kameras + Formular zum Hinzufuegen/Aendern -->
+  <dialog id="manageDlg" class="wide-dlg">
+    <h3>Kameras verwalten</h3>
+    <div id="camList" class="cam-list"></div>
+
+    <div class="actions">
+      <button id="addBtn" class="primary">+ Kamera hinzufuegen</button>
+      <button id="scanBtn">Netz durchsuchen</button>
+      <button id="yamlBtn">config.yaml anzeigen</button>
     </div>
-    <div class="row">
-      <input id="acHost" placeholder="Optional: einzelne IP (sonst ganzes Netz)" />
-      <button id="acRun">Suchen &amp; auslesen</button>
-    </div>
-    <div id="discoverResult"></div>
-    <form method="dialog"><button>Schliessen</button></form>
+
+    <div id="scanResult"></div>
+    <textarea id="yamlView" class="yaml" readonly hidden></textarea>
+
+    <!-- Formular (hinzufuegen UND bearbeiten) -->
+    <form id="camForm" hidden>
+      <h4 id="formTitle">Neue Kamera</h4>
+      <div class="grid2">
+        <label>Name
+          <input id="fName" placeholder="z.B. Haustuer" required />
+        </label>
+        <label>IP-Adresse
+          <input id="fHost" placeholder="192.168.1.46" />
+        </label>
+        <label>Benutzer
+          <input id="fUser" value="admin" />
+        </label>
+        <label>Passwort
+          <input id="fPass" type="password" placeholder="(beim Bearbeiten leer = unveraendert)" />
+        </label>
+        <label>ONVIF-Port
+          <input id="fPort" type="number" value="80" min="1" max="65535" />
+        </label>
+        <label>Bildformat
+          <select id="fAspect">
+            <option value="auto">Automatisch (aus dem Stream)</option>
+            <option value="16:9">16:9 (Standard, breit)</option>
+            <option value="4:3">4:3</option>
+            <option value="10:3">10:3 (sehr breit, z.B. 1920x576)</option>
+            <option value="32:9">32:9 (Ultrabreit)</option>
+            <option value="1:1">1:1 (quadratisch)</option>
+            <option value="9:16">9:16 (hochkant)</option>
+            <option value="__custom">Eigenes Format …</option>
+          </select>
+        </label>
+      </div>
+
+      <label class="full">Eigenes Bildformat
+        <input id="fAspectCustom" placeholder="z.B. 21:9" hidden />
+      </label>
+
+      <div class="row">
+        <button type="button" id="probeBtn">RTSP automatisch auslesen</button>
+        <span id="probeMsg" class="hint"></span>
+      </div>
+
+      <label class="full">RTSP Haupt-Stream
+        <input id="fMain" placeholder="rtsp://benutzer:passwort@192.168.1.46:554/..." />
+      </label>
+      <label class="full">RTSP Sub-Stream <small>(wird fuer Live-Bild + Bewegung genutzt, schont die CPU)</small>
+        <input id="fSub" placeholder="rtsp://benutzer:passwort@192.168.1.46:554/..." />
+      </label>
+
+      <div class="row checks">
+        <label class="inline"><input type="checkbox" id="fPtz" /> PTZ (schwenkbar)</label>
+        <label class="inline"><input type="checkbox" id="fMotion" checked /> Bewegungserkennung</label>
+        <label class="inline"><input type="checkbox" id="fEnabled" checked /> Aktiv</label>
+      </div>
+
+      <div class="actions">
+        <button type="submit" class="primary" id="saveBtn">Speichern</button>
+        <button type="button" id="cancelBtn">Abbrechen</button>
+        <span id="formMsg" class="hint"></span>
+      </div>
+    </form>
+
+    <form method="dialog" class="close-row"><button>Schliessen</button></form>
   </dialog>
 
   <template id="cardTpl">
     <section class="card">
-      <div class="cam-title"><span class="dot"></span><span class="name"></span></div>
+      <div class="cam-title"><span class="dot"></span><span class="name"></span><span class="res"></span></div>
       <div class="video-wrap">
         <img class="video" alt="Live" />
         <div class="motion-badge">Bewegung</div>

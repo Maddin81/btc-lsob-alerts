@@ -16,7 +16,7 @@ from datetime import datetime
 import cv2
 import numpy as np
 
-from .config import AppConfig, CameraConfig
+from .config import AppConfig, CameraConfig, aspect_to_ratio
 from .motion import MotionDetector
 from .notify import send_alert
 from .onvif_ptz import PTZController
@@ -48,6 +48,11 @@ class CameraWorker:
         self.connected = False
         self.last_motion_ts = 0.0
         self._last_alert_ts = 0.0
+        # Tatsaechliche Bildgroesse des Streams. Wird beim ersten Frame gesetzt
+        # und ans Dashboard gemeldet, damit die Kachel im richtigen Seiten-
+        # verhaeltnis dargestellt wird (nicht jede Kamera liefert 16:9).
+        self.frame_width = 0
+        self.frame_height = 0
 
         self.detector = MotionDetector(
             sensitivity_percent=cam.motion.sensitivity_percent,
@@ -105,6 +110,10 @@ class CameraWorker:
                     continue
                 fail = 0
                 frame_idx += 1
+                h, w = frame.shape[:2]
+                if (w, h) != (self.frame_width, self.frame_height):
+                    self.frame_width, self.frame_height = w, h
+                    log.info("Kamera %s: Bildgroesse %dx%d.", self.cam.id, w, h)
 
                 # Bewegungserkennung nur auf jedem 2. Frame -> spart CPU.
                 if self.cam.motion.enabled and frame_idx % 2 == 0:
@@ -166,12 +175,28 @@ class CameraWorker:
                 return self._frame
         return _placeholder_jpeg(f"{self.cam.name}: kein Bild")
 
+    @property
+    def aspect_ratio(self) -> float:
+        """Breite/Hoehe fuer die Kachel. Eingestelltes Format schlaegt die
+        Messung; ohne beides der uebliche 16:9-Rueckfall."""
+        fixed = aspect_to_ratio(self.cam.aspect)
+        if fixed:
+            return fixed
+        if self.frame_width and self.frame_height:
+            return self.frame_width / self.frame_height
+        return 16 / 9
+
     def status(self) -> dict:
         return {
             "id": self.cam.id,
             "name": self.cam.name,
+            "host": self.cam.host,
             "connected": self.connected,
             "ptz": bool(self.cam.ptz),
             "motion_enabled": self.cam.motion.enabled,
             "last_motion": self.last_motion_ts,
+            "width": self.frame_width,
+            "height": self.frame_height,
+            "aspect": self.cam.aspect,
+            "aspect_ratio": round(self.aspect_ratio, 4),
         }

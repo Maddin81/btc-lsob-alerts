@@ -8,6 +8,9 @@ mit den Kameras — unabhängig von der Original-Firmware-App.
 ## Funktionen
 
 - 📺 **Live-Ansicht** aller Kameras im Browser (Gitter-Dashboard, mehrere Betrachter gleichzeitig)
+- ➕ **Beliebig viele Kameras** — jede einzeln im Browser anlegen, ändern, abschalten
+  oder entfernen; jede mit **eigenen Zugangsdaten, eigenem ONVIF-Port und eigenem Bildformat**
+- 🖼️ **Richtiges Seitenverhältnis je Kamera** (auch sehr breite Kameras wie 1920×576)
 - 🚨 **Bewegungserkennung + Alarm** mit Snapshot und Benachrichtigung (Telegram / Webhook)
 - 🎮 **PTZ-Steuerung** (Schwenken / Neigen / Zoom) für Kameras, die das können
 - 🔍 **ONVIF-Gerätesuche** im lokalen Netz (findet IP-Adressen automatisch)
@@ -24,11 +27,40 @@ die Standard-Protokolle nutzt, die praktisch jede „ONVIF"-Kamera spricht.
 
 ## Einfachster Weg: Einrichtung komplett im Browser (kein Terminal)
 
-Wenn noch keine `config.yaml` existiert, startet die Software im **Einrichtungs-
-modus**: Öffne das Dashboard, gib die ONVIF-Zugangsdaten ein, klick auf
-**„Speichern & Starten"** — die Kameras werden automatisch gefunden, die Config
-wird geschrieben und die Live-Ansicht startet. Kein SSH, kein Bearbeiten von
-Dateien nötig.
+Im Dashboard oben rechts auf **„Kameras verwalten"**. Dort:
+
+- **„+ Kamera hinzufügen"** — Name, IP, Benutzer, Passwort, ONVIF-Port eintragen.
+  Der Knopf **„RTSP automatisch auslesen"** fragt *genau diese eine* Kamera per
+  ONVIF nach ihren echten Stream-Adressen und trägt sie ein. Beliebig oft
+  wiederholen — jede Kamera behält ihre eigenen Zugangsdaten und ihren eigenen Port.
+- **„Netz durchsuchen"** — findet alle ONVIF-Kameras im Netz auf einmal. Danach
+  auswählen, welche übernommen werden sollen. Bereits eingerichtete Kameras
+  bleiben dabei erhalten, sie werden **ergänzt, nicht ersetzt**.
+- **„Bearbeiten" / „Entfernen"** je Kamera. Beim Bearbeiten heißt ein leeres
+  Passwortfeld: *Passwort unverändert lassen*.
+
+Änderungen greifen sofort — es startet nur die betroffene Kamera neu, die
+übrigen Live-Bilder laufen weiter. Kein SSH, kein Container-Neustart.
+
+> Die `config.yaml` wird dabei neu geschrieben. **Eigene Kommentare in der Datei
+> gehen dabei verloren** — die Werte selbst und `${VAR}`-Platzhalter bleiben erhalten.
+
+### Bildformat (wichtig bei breiten Kameras)
+
+Nicht jede Kamera liefert 16:9. Eine Reolink liefert im Sub-Stream z. B.
+1920×576 — das ist deutlich breiter (10:3). Deshalb hat jede Kamera ein
+eigenes **Bildformat**:
+
+| Einstellung | Bedeutung |
+|---|---|
+| `auto` (Standard) | wird aus dem laufenden Stream **gemessen** — passt immer |
+| `16:9`, `4:3`, `10:3`, `32:9`, `1:1`, `9:16` | fest vorgegeben |
+| eigenes, z. B. `21:9` | frei eintragbar |
+
+Kacheln mit einem Verhältnis ab 2.2:1 belegen im Gitter automatisch **zwei
+Spalten**, damit ein breites Bild nicht zum schmalen Streifen schrumpft. Der
+Schalter **„Bild füllen"** oben schneidet statt Balken zu zeigen (nur Ansicht,
+gilt pro Betrachter).
 
 Auf einer Synology reicht dafür der **Container Manager** (grafisch):
 1. Ordner `camera-nvr/` in einen freigegebenen Ordner legen (z. B. `/docker`).
@@ -58,8 +90,8 @@ docker compose up -d --build
 Du musst die RTSP-Pfade **nicht selbst raten**. Die Software fragt die Kameras
 per ONVIF direkt nach ihren echten Stream-URLs. Zwei Wege:
 
-**A) Im Dashboard:** Klick oben auf **„Kameras suchen"**, gib ONVIF-Benutzer +
-Passwort ein → du bekommst eine fertige `config.yaml` zum Kopieren.
+**A) Im Dashboard:** **„Kameras verwalten"** → beim Anlegen einer Kamera auf
+**„RTSP automatisch auslesen"**, oder **„Netz durchsuchen"** für alle auf einmal.
 
 **B) Per Kommandozeile** (findet auch die IPs automatisch):
 
@@ -95,8 +127,8 @@ RTSP-Pfad-Schema. Häufige Beispiele:
 | Dahua-kompatibel | `rtsp://user:pass@IP:554/cam/realmonitor?channel=1&subtype=0` | `subtype=1` |
 | Generisch / China | `rtsp://user:pass@IP:554/live/ch0` | `/live/ch1` |
 
-Wenn du den Pfad nicht kennst: Klick im Dashboard auf **„Kameras suchen"**
-(ONVIF-Discovery) um die IPs zu finden, oder teste die URLs mit VLC
+Wenn du den Pfad nicht kennst: im Dashboard **„Kameras verwalten" → „Netz
+durchsuchen"** (ONVIF-Discovery), oder teste die URLs mit VLC
 (*Medien → Netzwerkstream öffnen*).
 
 > **Tipp:** Immer den **Sub-Stream** (niedrige Auflösung) für Live-Grid und
@@ -113,6 +145,11 @@ aus der `.env` (nicht im Klartext in der YAML).
 - `sensitivity_percent`: kleiner = empfindlicher (Standard 1.5).
 - `region`: `[x, y, w, h]` in Prozent, um nur einen Bildbereich zu überwachen
   (z. B. nur die Einfahrt, nicht die Straße).
+
+### Eine Kamera vorübergehend stilllegen
+
+`enabled: false` (oder im Dashboard den Haken **„Aktiv"** entfernen). Die Kamera
+bleibt eingerichtet, wird aber nicht mehr abgefragt und erscheint nicht im Gitter.
 
 ### Benachrichtigungen
 

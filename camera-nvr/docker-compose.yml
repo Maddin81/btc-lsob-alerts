@@ -14,8 +14,10 @@ services:
       - ./data:/data
     environment:
       # Passwoerter hier ODER in einer .env-Datei setzen (siehe README).
-      - CAM1_PASS=${CAM1_PASS:-}
-      - CAM2_PASS=${CAM2_PASS:-}
+      # Je Kamera eine Variable - Namen frei waehlbar, muessen zur config.yaml passen.
+      - CAM_HAUSTUER_PASS=${CAM_HAUSTUER_PASS:-}
+      - CAM_CARPORT_PASS=${CAM_CARPORT_PASS:-}
+      - CAM_GARTEN_PASS=${CAM_GARTEN_PASS:-}
       - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:-}
       - TELEGRAM_CHAT_ID=${TELEGRAM_CHAT_ID:-}
     # WS-Discovery (Kamerasuche) braucht das Host-Netz, weil es Multicast nutzt.

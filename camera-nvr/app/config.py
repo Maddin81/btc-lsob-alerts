@@ -1,7 +1,12 @@
-"""Laden und Validieren der YAML-Konfiguration.
+"""Laden, Validieren und Schreiben der YAML-Konfiguration.
 
 Unterstuetzt ${VAR}-Platzhalter, die aus Umgebungsvariablen ersetzt werden,
 damit Passwoerter nicht im Klartext in der config.yaml stehen muessen.
+
+WICHTIG: Zum Bearbeiten (Kamera hinzufuegen/aendern/loeschen) wird immer der
+ROHE YAML-Baum veraendert und zurueckgeschrieben - nie die geladene AppConfig.
+Sonst wuerden die ${VAR}-Platzhalter beim Speichern durch die aufgeloesten
+Klartext-Passwoerter ersetzt.
 """
 from __future__ import annotations
 
@@ -13,6 +18,21 @@ from typing import Any
 import yaml
 
 _ENV_PATTERN = re.compile(r"\$\{([^}]+)\}")
+
+# Erlaubte Werte fuer das Bildformat einer Kamera.
+# "auto" = wird aus dem tatsaechlichen Stream ermittelt.
+_ASPECT_PATTERN = re.compile(r"^\s*(\d+(?:\.\d+)?)\s*[:/]\s*(\d+(?:\.\d+)?)\s*$")
+
+
+def aspect_to_ratio(value: str) -> float | None:
+    """'16:9' -> 1.777..., 'auto'/leer/ungueltig -> None."""
+    if not value or value.strip().lower() == "auto":
+        return None
+    m = _ASPECT_PATTERN.match(value)
+    if not m:
+        return None
+    w, h = float(m.group(1)), float(m.group(2))
+    return w / h if h > 0 else None
 
 
 def _expand(value: Any) -> Any:
@@ -46,6 +66,11 @@ class CameraConfig:
     rtsp_sub: str = ""
     onvif_port: int = 80
     ptz: bool = False
+    enabled: bool = True
+    # Bildformat der Kachel: "auto" (aus dem Stream ermittelt) oder z.B. "16:9",
+    # "4:3", "10:3". Noetig, weil nicht jede Kamera 16:9 liefert - die Reolink
+    # am Carport z.B. 1920x576 (sehr breit).
+    aspect: str = "auto"
     motion: MotionConfig = field(default_factory=MotionConfig)
 
     @property
@@ -76,16 +101,133 @@ class AppConfig:
     cameras: list[CameraConfig] = field(default_factory=list)
 
 
-def load_config(path: str) -> AppConfig:
+# -- Rohe YAML-Ebene (fuer das Bearbeiten) ------------------------------------
+
+def default_raw() -> dict:
+    """Leeres, gueltiges Config-Geruest ohne Kameras."""
+    return {
+        "server": {"host": "0.0.0.0", "port": 8080, "auth_user": "", "auth_pass": ""},
+        "storage": {"events_dir": "/data/events", "retention_days": 14},
+        "notify": {
+            "telegram": {"enabled": False, "bot_token": "${TELEGRAM_BOT_TOKEN}", "chat_id": "${TELEGRAM_CHAT_ID}"},
+            "webhook": {"enabled": False, "url": ""},
+            "cooldown_seconds": 60,
+        },
+        "cameras": [],
+    }
+
+
+def load_raw(path: str) -> dict:
+    """Liest die config.yaml unveraendert (mit ${VAR}-Platzhaltern).
+    Fehlt die Datei, kommt das leere Geruest zurueck."""
+    if not os.path.isfile(path):
+        return default_raw()
     with open(path, "r", encoding="utf-8") as fh:
         raw = yaml.safe_load(fh) or {}
-    raw = _expand(raw)
+    if not isinstance(raw, dict):
+        raise ValueError("config.yaml enthaelt kein Objekt auf oberster Ebene.")
+    raw.setdefault("cameras", [])
+    return raw
 
-    server = raw.get("server", {})
-    storage = raw.get("storage", {})
-    notify_raw = raw.get("notify", {})
-    tg = notify_raw.get("telegram", {})
-    wh = notify_raw.get("webhook", {})
+
+def dump_raw(raw: dict) -> str:
+    return yaml.safe_dump(raw, allow_unicode=True, sort_keys=False, default_flow_style=False)
+
+
+def save_raw(path: str, raw: dict) -> None:
+    """Schreibt atomar und nur, wenn das Ergebnis auch ladbar ist."""
+    parse_config(raw)  # wirft ValueError bei Unsinn
+    os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+    tmp = path + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as fh:
+        fh.write(dump_raw(raw))
+    os.replace(tmp, path)
+
+
+_CAMERA_FIELDS = (
+    "id", "name", "host", "username", "password", "rtsp_main", "rtsp_sub",
+    "onvif_port", "ptz", "enabled", "aspect", "motion",
+)
+
+
+def normalize_camera(data: dict, existing_ids: set[str] | None = None) -> dict:
+    """Prueft eine einzelne Kamera aus dem Formular und bringt sie in die
+    Form, wie sie in der YAML steht. Wirft ValueError mit Klartext-Grund."""
+    existing_ids = existing_ids or set()
+    cam = {k: v for k, v in (data or {}).items() if k in _CAMERA_FIELDS}
+
+    name = str(cam.get("name", "")).strip()
+    if not name:
+        raise ValueError("Name fehlt.")
+    cid = str(cam.get("id", "")).strip() or slugify(name)
+    if not cid:
+        raise ValueError("Kennung (id) fehlt und laesst sich nicht aus dem Namen ableiten.")
+    if cid in existing_ids:
+        raise ValueError(f"Kennung '{cid}' ist bereits vergeben.")
+
+    rtsp_main = str(cam.get("rtsp_main", "")).strip()
+    rtsp_sub = str(cam.get("rtsp_sub", "")).strip()
+    if not (rtsp_main or rtsp_sub):
+        raise ValueError("Mindestens eine RTSP-Adresse (Haupt- oder Sub-Stream) wird gebraucht.")
+
+    aspect = str(cam.get("aspect", "auto")).strip() or "auto"
+    if aspect.lower() != "auto" and aspect_to_ratio(aspect) is None:
+        raise ValueError(f"Bildformat '{aspect}' ist ungueltig - erwartet z.B. 16:9 oder auto.")
+
+    try:
+        port = int(cam.get("onvif_port", 80) or 80)
+    except (TypeError, ValueError):
+        raise ValueError("ONVIF-Port muss eine Zahl sein.")
+
+    m = cam.get("motion") or {}
+    out = {
+        "id": cid,
+        "name": name,
+        "host": str(cam.get("host", "")).strip(),
+        "username": str(cam.get("username", "admin") or "admin"),
+        "password": str(cam.get("password", "") or ""),
+        "rtsp_main": rtsp_main,
+        "rtsp_sub": rtsp_sub,
+        "onvif_port": port,
+        "ptz": bool(cam.get("ptz", False)),
+        "enabled": bool(cam.get("enabled", True)),
+        "aspect": aspect,
+        "motion": {
+            "enabled": bool(m.get("enabled", True)),
+            "sensitivity_percent": float(m.get("sensitivity_percent", 1.5) or 1.5),
+            "region": list(m.get("region", []) or []),
+        },
+    }
+    return out
+
+
+def slugify(text: str, fallback: str = "") -> str:
+    s = re.sub(r"[^a-z0-9]+", "-", (text or "").lower().replace("ä", "ae")
+               .replace("ö", "oe").replace("ü", "ue").replace("ß", "ss")).strip("-")
+    return s or fallback
+
+
+def unique_id(base: str, taken: set[str]) -> str:
+    cid, n = base or "cam", 2
+    while cid in taken:
+        cid = f"{base}-{n}"
+        n += 1
+    return cid
+
+
+# -- Geparste Ebene (fuer die Laufzeit) ---------------------------------------
+
+def parse_config(raw: dict) -> AppConfig:
+    """Loest ${VAR} auf und baut die typisierte Konfiguration.
+    Eine leere Kameraliste ist erlaubt - die App geht dann in den
+    Einrichtungsmodus."""
+    raw = _expand(raw or {})
+
+    server = raw.get("server", {}) or {}
+    storage = raw.get("storage", {}) or {}
+    notify_raw = raw.get("notify", {}) or {}
+    tg = notify_raw.get("telegram", {}) or {}
+    wh = notify_raw.get("webhook", {}) or {}
 
     notify = NotifyConfig(
         telegram_enabled=bool(tg.get("enabled", False)),
@@ -97,12 +239,17 @@ def load_config(path: str) -> AppConfig:
     )
 
     cameras: list[CameraConfig] = []
-    for c in raw.get("cameras", []):
+    seen: set[str] = set()
+    for c in raw.get("cameras", []) or []:
         m = c.get("motion", {}) or {}
+        cid = str(c["id"])
+        if cid in seen:
+            raise ValueError(f"Doppelte Kamera-Kennung '{cid}'.")
+        seen.add(cid)
         cameras.append(
             CameraConfig(
-                id=str(c["id"]),
-                name=str(c.get("name", c["id"])),
+                id=cid,
+                name=str(c.get("name", cid)),
                 host=str(c.get("host", "")),
                 username=str(c.get("username", "admin")),
                 password=str(c.get("password", "")),
@@ -110,6 +257,8 @@ def load_config(path: str) -> AppConfig:
                 rtsp_sub=str(c.get("rtsp_sub", "")),
                 onvif_port=int(c.get("onvif_port", 80)),
                 ptz=bool(c.get("ptz", False)),
+                enabled=bool(c.get("enabled", True)),
+                aspect=str(c.get("aspect", "auto") or "auto"),
                 motion=MotionConfig(
                     enabled=bool(m.get("enabled", True)),
                     sensitivity_percent=float(m.get("sensitivity_percent", 1.5)),
@@ -117,9 +266,6 @@ def load_config(path: str) -> AppConfig:
                 ),
             )
         )
-
-    if not cameras:
-        raise ValueError("Keine Kameras in der Konfiguration gefunden.")
 
     return AppConfig(
         host=str(server.get("host", "0.0.0.0")),
@@ -131,3 +277,7 @@ def load_config(path: str) -> AppConfig:
         notify=notify,
         cameras=cameras,
     )
+
+
+def load_config(path: str) -> AppConfig:
+    return parse_config(load_raw(path))

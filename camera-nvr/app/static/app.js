@@ -54,16 +54,23 @@ function wirePtz(id, el) {
   });
 }
 
-/** Setzt das Seitenverhaeltnis der Kachel. Sehr breite Kameras (z.B. der
- *  Reolink-Substream mit 1920x576) bekommen zwei Spalten, damit sie nicht als
- *  schmaler Streifen erscheinen. */
-function applyAspect(card, ratio) {
-  if (!ratio || !isFinite(ratio) || ratio <= 0) return;
-  if (Math.abs((card.ratio || 0) - ratio) < 0.001) return;
-  card.ratio = ratio;
-  card.el.querySelector(".video-wrap").style.aspectRatio = String(ratio);
-  card.el.classList.toggle("wide", ratio >= 2.2);
-  card.el.classList.toggle("tall", ratio <= 0.9);
+/** Darstellung der Kachel: Seitenverhaeltnis, Breite und Bildanpassung.
+ *  Breite: 0 = automatisch (sehr breite Bilder wie der Reolink-Substream mit
+ *  1920x576 bekommen zwei Spalten), sonst die eingestellte Spaltenzahl. */
+function applyLayout(card, cam) {
+  const ratio = cam.aspect_ratio;
+  const spalten = cam.columns ? cam.columns : (ratio >= 2.2 ? 2 : 1);
+  const fill = cam.fill === "cover";
+  const schluessel = `${ratio}|${spalten}|${fill}`;
+  if (card.layout === schluessel) return;
+  card.layout = schluessel;
+
+  const wrap = card.el.querySelector(".video-wrap");
+  if (ratio && isFinite(ratio) && ratio > 0) wrap.style.aspectRatio = String(ratio);
+  // -1 = volle Zeilenbreite: nur so stehen zwei Kacheln garantiert
+  // untereinander, unabhaengig von der Fensterbreite.
+  card.el.style.gridColumn = spalten === -1 ? "1 / -1" : (spalten > 1 ? `span ${spalten}` : "");
+  card.el.classList.toggle("fill", fill);
 }
 
 function buildCard(cam) {
@@ -98,17 +105,20 @@ async function refreshStatus() {
     return; // naechster Tick versucht es erneut
   }
   const alive = new Set();
-  for (const cam of list) {
+  list.forEach((cam, i) => {
     alive.add(cam.id);
     const c = cards.has(cam.id) ? cards.get(cam.id) : buildCard(cam);
     c.el.querySelector(".name").textContent = cam.name;
     c.dot.classList.toggle("online", cam.connected);
     c.dot.classList.toggle("offline", !cam.connected);
     c.res.textContent = cam.width ? `${cam.width}×${cam.height}` : "";
-    applyAspect(c, cam.aspect_ratio);
+    // Reihenfolge kommt aus der Konfiguration - ohne das haengen neu
+    // hinzugefuegte Kacheln immer hinten, egal wie sortiert wurde.
+    c.el.style.order = String(i);
+    applyLayout(c, cam);
     const recent = cam.last_motion && (Date.now() / 1000 - cam.last_motion) < 8;
     c.badge.classList.toggle("active", !!recent);
-  }
+  });
   // Entfernte oder abgeschaltete Kameras aus dem Gitter nehmen.
   for (const [id, c] of cards) {
     if (!alive.has(id)) { c.el.remove(); cards.delete(id); }
@@ -143,6 +153,8 @@ const F = {
   ptz: document.getElementById("fPtz"),
   motion: document.getElementById("fMotion"),
   enabled: document.getElementById("fEnabled"),
+  columns: document.getElementById("fColumns"),
+  fill: document.getElementById("fFill"),
 };
 
 F.aspect.addEventListener("change", () => {
@@ -172,17 +184,43 @@ async function renderList() {
         'Lege sie unten einzeln an oder lass das Netz durchsuchen.</p>';
       return;
     }
-    box.innerHTML = data.cameras.map((c) => `
+    const breite = (c) => (c.columns === -1 ? "volle Breite"
+      : c.columns ? `${c.columns} Spalten` : "Breite automatisch");
+    box.innerHTML = data.cameras.map((c, i) => `
       <div class="cam-row${c.enabled === false ? " off" : ""}">
+        <div class="cam-row-sort">
+          <button data-up="${esc(c.id)}" ${i === 0 ? "disabled" : ""} title="nach oben">&#9650;</button>
+          <button data-down="${esc(c.id)}" ${i === data.cameras.length - 1 ? "disabled" : ""} title="nach unten">&#9660;</button>
+        </div>
         <div class="cam-row-main">
           <b>${esc(c.name)}</b> <span class="hint">${esc(c.host)}${c.onvif_port ? ":" + c.onvif_port : ""}</span><br>
-          <span class="hint">Format: ${esc(c.aspect || "auto")}${c.ptz ? " · PTZ" : ""}${c.enabled === false ? " · abgeschaltet" : ""}</span>
+          <span class="hint">Format ${esc(c.aspect || "auto")} · ${breite(c)}${c.fill === "cover" ? " · zugeschnitten" : ""}${c.ptz ? " · PTZ" : ""}${c.enabled === false ? " · abgeschaltet" : ""}</span>
         </div>
         <div class="cam-row-btns">
           <button data-edit="${esc(c.id)}">Bearbeiten</button>
           <button data-del="${esc(c.id)}" class="danger">Entfernen</button>
         </div>
       </div>`).join("");
+
+    const verschieben = async (id, richtung) => {
+      const ids = data.cameras.map((c) => c.id);
+      const i = ids.indexOf(id), j = i + richtung;
+      if (i < 0 || j < 0 || j >= ids.length) return;
+      [ids[i], ids[j]] = [ids[j], ids[i]];
+      try {
+        await api("/api/config/order", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ ids }),
+        });
+        await renderList();
+        refreshStatus();
+      } catch (e) { alert("Sortieren fehlgeschlagen: " + e.message); }
+    };
+    box.querySelectorAll("[data-up]").forEach((b) =>
+      b.addEventListener("click", () => verschieben(b.dataset.up, -1)));
+    box.querySelectorAll("[data-down]").forEach((b) =>
+      b.addEventListener("click", () => verschieben(b.dataset.down, 1)));
 
     box.querySelectorAll("[data-edit]").forEach((b) =>
       b.addEventListener("click", () => openForm(data.cameras.find((c) => c.id === b.dataset.edit))));
@@ -215,6 +253,8 @@ function openForm(cam) {
   F.ptz.checked = cam ? !!cam.ptz : false;
   F.motion.checked = cam ? !(cam.motion && cam.motion.enabled === false) : true;
   F.enabled.checked = cam ? cam.enabled !== false : true;
+  F.columns.value = String(cam && cam.columns ? cam.columns : 0);
+  F.fill.value = cam && cam.fill === "cover" ? "cover" : "contain";
   setAspectField(cam ? cam.aspect : "auto");
   document.getElementById("formMsg").textContent = "";
   document.getElementById("probeMsg").textContent = "";
@@ -274,6 +314,8 @@ form.addEventListener("submit", async (e) => {
     ptz: F.ptz.checked,
     enabled: F.enabled.checked,
     aspect: currentAspect(),
+    columns: parseInt(F.columns.value, 10) || 0,
+    fill: F.fill.value,
     motion: { enabled: F.motion.checked },
   };
   msg.textContent = "Speichere …";

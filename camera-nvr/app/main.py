@@ -274,6 +274,30 @@ def delete_camera(camera_id: str, _: None = Depends(require_auth)) -> JSONRespon
     return JSONResponse({"ok": True, "cameras": count})
 
 
+@app.post("/api/config/order")
+def set_order(payload: dict = Body(...), _: None = Depends(require_auth)) -> JSONResponse:
+    """Reihenfolge der Kacheln festlegen. Die Liste bestimmt, in welcher
+    Reihenfolge die Kameras im Gitter erscheinen; nicht genannte haengen
+    hinten an, damit nie eine Kamera verschwindet."""
+    reihenfolge = [str(i) for i in (payload or {}).get("ids") or []]
+    if not reihenfolge:
+        raise HTTPException(status_code=400, detail="Keine Reihenfolge uebergeben")
+
+    cams = _raw_cameras()
+    nach_id = {str(c.get("id")): c for c in cams}
+    unbekannt = [i for i in reihenfolge if i not in nach_id]
+    if unbekannt:
+        raise HTTPException(status_code=400, detail=f"Unbekannte Kamera(s): {', '.join(unbekannt)}")
+
+    sortiert = [nach_id[i] for i in reihenfolge]
+    sortiert += [c for c in cams if str(c.get("id")) not in set(reihenfolge)]
+
+    raw = STATE["raw"]
+    raw["cameras"] = sortiert
+    count = _save_and_apply(raw)
+    return JSONResponse({"ok": True, "order": [str(c.get("id")) for c in sortiert], "cameras": count})
+
+
 @app.get("/api/config/yaml")
 def config_yaml(_: None = Depends(require_auth)) -> JSONResponse:
     """Die aktuelle config.yaml zum Ansehen (Passwoerter wie gespeichert -

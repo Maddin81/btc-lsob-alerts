@@ -68,6 +68,24 @@
         <input id="fAspectCustom" placeholder="z.B. 21:9" hidden />
       </label>
 
+      <div class="grid2">
+        <label>Kachelbreite
+          <select id="fColumns">
+            <option value="0">Automatisch (breite Bilder doppelt)</option>
+            <option value="-1">Volle Breite (ganze Zeile)</option>
+            <option value="1">1 Spalte</option>
+            <option value="2">2 Spalten (breit)</option>
+            <option value="3">3 Spalten (sehr breit)</option>
+          </select>
+        </label>
+        <label>Bildanpassung
+          <select id="fFill">
+            <option value="contain">Ganzes Bild (ggf. Balken)</option>
+            <option value="cover">Formatfuellend (zuschneiden)</option>
+          </select>
+        </label>
+      </div>
+
       <div class="row">
         <button type="button" id="probeBtn">RTSP automatisch auslesen</button>
         <span id="probeMsg" class="hint"></span>

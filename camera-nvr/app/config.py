@@ -71,6 +71,15 @@ class CameraConfig:
     # "4:3", "10:3". Noetig, weil nicht jede Kamera 16:9 liefert - die Reolink
     # am Carport z.B. 1920x576 (sehr breit).
     aspect: str = "auto"
+    # Breite der Kachel im Gitter: 0 = automatisch (breite Bilder ab 2.2:1
+    # bekommen zwei Spalten), 1-3 = feste Spaltenzahl, -1 = volle Zeilenbreite.
+    # Volle Breite ist der zuverlaessige Weg, wenn zwei Kacheln GARANTIERT
+    # untereinander stehen sollen - bei fester Spaltenzahl haengt das sonst
+    # von der Fensterbreite ab.
+    columns: int = 0
+    # "contain" = ganzes Bild, ggf. mit Balken. "cover" = formatfuellend
+    # zuschneiden. Nuetzlich, wenn eine Kachel bewusst breiter gezogen wird.
+    fill: str = "contain"
     motion: MotionConfig = field(default_factory=MotionConfig)
 
     @property
@@ -146,7 +155,7 @@ def save_raw(path: str, raw: dict) -> None:
 
 _CAMERA_FIELDS = (
     "id", "name", "host", "username", "password", "rtsp_main", "rtsp_sub",
-    "onvif_port", "ptz", "enabled", "aspect", "motion",
+    "onvif_port", "ptz", "enabled", "aspect", "columns", "fill", "motion",
 )
 
 
@@ -179,6 +188,17 @@ def normalize_camera(data: dict, existing_ids: set[str] | None = None) -> dict:
     except (TypeError, ValueError):
         raise ValueError("ONVIF-Port muss eine Zahl sein.")
 
+    try:
+        spalten = int(cam.get("columns", 0) or 0)
+    except (TypeError, ValueError):
+        raise ValueError("Kachelbreite muss eine Zahl sein.")
+    if spalten not in (-1, 0, 1, 2, 3):
+        raise ValueError("Kachelbreite: -1 (volle Breite), 0 (automatisch) oder 1-3 Spalten.")
+
+    fuellung = str(cam.get("fill", "contain") or "contain").strip().lower()
+    if fuellung not in ("contain", "cover"):
+        raise ValueError("Bildanpassung muss 'contain' oder 'cover' sein.")
+
     m = cam.get("motion") or {}
     out = {
         "id": cid,
@@ -192,6 +212,8 @@ def normalize_camera(data: dict, existing_ids: set[str] | None = None) -> dict:
         "ptz": bool(cam.get("ptz", False)),
         "enabled": bool(cam.get("enabled", True)),
         "aspect": aspect,
+        "columns": spalten,
+        "fill": fuellung,
         "motion": {
             "enabled": bool(m.get("enabled", True)),
             "sensitivity_percent": float(m.get("sensitivity_percent", 1.5) or 1.5),
@@ -259,6 +281,8 @@ def parse_config(raw: dict) -> AppConfig:
                 ptz=bool(c.get("ptz", False)),
                 enabled=bool(c.get("enabled", True)),
                 aspect=str(c.get("aspect", "auto") or "auto"),
+                columns=int(c.get("columns", 0) or 0),
+                fill=str(c.get("fill", "contain") or "contain"),
                 motion=MotionConfig(
                     enabled=bool(m.get("enabled", True)),
                     sensitivity_percent=float(m.get("sensitivity_percent", 1.5)),

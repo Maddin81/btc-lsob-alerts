@@ -199,4 +199,6 @@ class CameraWorker:
             "height": self.frame_height,
             "aspect": self.cam.aspect,
             "aspect_ratio": round(self.aspect_ratio, 4),
+            "columns": self.cam.columns,
+            "fill": self.cam.fill,
         }

@@ -44,10 +44,10 @@ button.danger:hover { border-color: var(--danger); }
   background: var(--card); border: 1px solid var(--line);
   border-radius: 12px; overflow: hidden; display: flex; flex-direction: column;
 }
-/* Sehr breite Kameras (z.B. 1920x576) bekommen zwei Spalten, damit das Bild
-   nicht auf Briefmarkenhoehe schrumpft. Hochkant-Kameras bleiben einspaltig. */
-.card.wide { grid-column: span 2; }
-@media (max-width: 760px) { .card.wide { grid-column: span 1; } }
+/* Die Spaltenzahl setzt app.js je Kamera (grid-column: span N) - automatisch
+   fuer sehr breite Bilder, sonst nach Einstellung. Auf schmalen Bildschirmen
+   ist ohnehin nur eine Spalte da. */
+@media (max-width: 760px) { .card { grid-column: span 1 !important; } }
 .cam-title { display: flex; align-items: center; gap: 8px; padding: 10px 12px; font-weight: 600; }
 .cam-title .res { margin-left: auto; font-weight: 400; font-size: 12px; color: var(--muted); }
 .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--muted); flex: none; }
@@ -57,7 +57,8 @@ button.danger:hover { border-color: var(--danger); }
    16/9 ist nur der Rueckfall, solange noch kein Bild angekommen ist. */
 .video-wrap { position: relative; background: #000; aspect-ratio: 16/9; }
 .video { width: 100%; height: 100%; object-fit: contain; display: block; }
-body.fill .video { object-fit: cover; }
+/* Formatfuellend: global per Kopfzeilen-Schalter oder pro Kamera eingestellt. */
+body.fill .video, .card.fill .video { object-fit: cover; }
 .motion-badge {
   position: absolute; top: 8px; right: 8px; background: var(--danger);
   color: #fff; padding: 3px 8px; border-radius: 6px; font-size: 12px;
@@ -93,6 +94,10 @@ input:focus, select:focus { outline: none; border-color: var(--accent); }
 }
 .cam-row.off { opacity: .55; }
 .cam-row-btns { display: flex; gap: 6px; flex: none; }
+.cam-row-main { flex: 1; min-width: 0; }
+.cam-row-sort { display: flex; flex-direction: column; gap: 2px; flex: none; }
+.cam-row-sort button { padding: 1px 6px; font-size: 11px; line-height: 1.2; }
+.cam-row-sort button:disabled { opacity: .3; cursor: default; }
 
 form .grid2 {
   display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));

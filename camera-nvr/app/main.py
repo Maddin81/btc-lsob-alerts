@@ -1,6 +1,7 @@
 """FastAPI-Anwendung: Web-Dashboard, MJPEG-Live-Streams, PTZ, Bewegungs-Ereignisse."""
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 import secrets
@@ -10,10 +11,11 @@ from contextlib import asynccontextmanager
 
 import yaml
 
-from fastapi import Body, Depends, FastAPI, HTTPException, Query, status
+from fastapi import Body, Depends, FastAPI, HTTPException, Query, Request, status
 from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from fastapi.staticfiles import StaticFiles
+from starlette.concurrency import run_in_threadpool
 
 from .autodetect import DEFAULT_CREDENTIALS, camera_entry, scan_subnet, _local_subnet
 from .camera import CameraWorker
@@ -324,15 +326,25 @@ def save_config(payload: dict = Body(...), _: None = Depends(require_auth)) -> J
 
 
 @app.get("/api/stream/{camera_id}")
-def stream(camera_id: str, _: None = Depends(require_auth)) -> StreamingResponse:
+async def stream(camera_id: str, request: Request, _: None = Depends(require_auth)) -> StreamingResponse:
     worker = _worker(camera_id)
 
-    def gen():
+    # ASYNCHRON, nicht synchron: ein synchroner Generator in einer
+    # StreamingResponse wird beim Verbindungsabbruch NICHT abgebrochen. Sein
+    # finally-Block liefe nie, der Zuschauerzaehler bliebe stehen und die
+    # Kamera ginge nie mehr in Bereitschaft (nachgemessen).
+    async def gen():
         boundary = b"--frame\r\n"
-        while True:
-            jpeg = worker.get_jpeg()
-            yield boundary + b"Content-Type: image/jpeg\r\n\r\n" + jpeg + b"\r\n"
-            time.sleep(0.1)  # ~10 fps im Browser, schont die CPU
+        worker.viewer_an()
+        try:
+            while not await request.is_disconnected():
+                # Das JPEG-Kodieren ist Rechenarbeit -> nicht im Ereignisschleifen-
+                # Thread erledigen, sonst blockiert es alle anderen Anfragen.
+                jpeg = await run_in_threadpool(worker.get_jpeg)
+                yield boundary + b"Content-Type: image/jpeg\r\n\r\n" + jpeg + b"\r\n"
+                await asyncio.sleep(0.1)  # ~10 fps im Browser, schont die CPU
+        finally:
+            worker.viewer_ab()
 
     return StreamingResponse(gen(), media_type="multipart/x-mixed-replace; boundary=frame")
 
@@ -340,6 +352,9 @@ def stream(camera_id: str, _: None = Depends(require_auth)) -> StreamingResponse
 @app.get("/api/snapshot/{camera_id}")
 def snapshot(camera_id: str, _: None = Depends(require_auth)):
     worker = _worker(camera_id)
+    # Steht die Kamera in Bereitschaft, kurz aufwecken statt Platzhalter liefern.
+    if worker.standby:
+        worker.wecken()
     return StreamingResponse(iter([worker.get_jpeg()]), media_type="image/jpeg")
 
 

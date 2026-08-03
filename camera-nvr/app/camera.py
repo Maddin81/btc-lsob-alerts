@@ -26,7 +26,11 @@ log = logging.getLogger("camera-nvr.camera")
 # RTSP ueber TCP erzwingen (stabiler bei billigen Kameras / WLAN).
 os.environ.setdefault("OPENCV_FFMPEG_CAPTURE_OPTIONS", "rtsp_transport;tcp")
 
-_PLACEHOLDER = None
+# Der Browser bekommt ohnehin nur ~10 Bilder/s, die Bewegungserkennung braucht
+# noch weniger. Alles darueber ist verschenkte Rechenzeit - und Dekodieren ist
+# der teuerste Schritt ueberhaupt.
+MAX_ANZEIGE_FPS = 10.0
+MAX_BEWEGUNG_FPS = 5.0
 
 
 def _placeholder_jpeg(text: str) -> bytes:
@@ -48,6 +52,17 @@ class CameraWorker:
         self.connected = False
         self.last_motion_ts = 0.0
         self._last_alert_ts = 0.0
+        # Rohbild + Zaehler. Das JPEG entsteht erst, wenn es jemand ABHOLT -
+        # vorher wurde jeder einzelne Frame kodiert, auch ohne Zuschauer.
+        self._raw: np.ndarray | None = None
+        self._raw_id = 0
+        self._jpeg: bytes | None = None
+        self._jpeg_id = -1
+        self._note = ""
+        # Zuschauerzaehlung fuer den Bereitschaftsbetrieb.
+        self.viewers = 0
+        self._last_viewer_ts = time.time()
+        self.standby = False
         # Tatsaechliche Bildgroesse des Streams. Wird beim ersten Frame gesetzt
         # und ans Dashboard gemeldet, damit die Kachel im richtigen Seiten-
         # verhaeltnis dargestellt wird (nicht jede Kamera liefert 16:9).
@@ -72,6 +87,31 @@ class CameraWorker:
     def stop(self) -> None:
         self._stop.set()
 
+    # -- Bereitschaftsbetrieb -------------------------------------------------
+    def _standby_faellig(self) -> bool:
+        """Wahr, wenn niemand zuschaut, keine Bewegungserkennung laeuft und die
+        Wartezeit abgelaufen ist. Dann wird der RTSP-Stream freigegeben."""
+        if self.cam.standby_seconds <= 0 or self.cam.motion.enabled:
+            return False
+        if self.viewers > 0:
+            return False
+        return (time.time() - self._last_viewer_ts) >= self.cam.standby_seconds
+
+    def _warte_auf_bedarf(self) -> bool:
+        """Haelt den Worker im Leerlauf an, bis wieder jemand zuschaut.
+        Gibt True zurueck, wenn gewartet wurde (Schleife neu beginnen)."""
+        if not self._standby_faellig():
+            if self.standby:
+                self.standby = False
+            return False
+        if not self.standby:
+            self.standby = True
+            self.connected = False
+            self._set_placeholder("Bereitschaft")
+            log.info("Kamera %s: Bereitschaft - kein Zuschauer.", self.cam.id)
+        self._stop.wait(1.0)
+        return True
+
     # -- Interner Lauf --------------------------------------------------------
     def _run(self) -> None:
         url = self.cam.live_url
@@ -80,6 +120,9 @@ class CameraWorker:
             return
 
         while not self._stop.is_set():
+            if self._warte_auf_bedarf():
+                continue
+
             cap = cv2.VideoCapture(url, cv2.CAP_FFMPEG)
             # Puffer klein halten -> geringe Latenz.
             try:
@@ -97,11 +140,13 @@ class CameraWorker:
             self.connected = True
             log.info("Kamera %s: Stream verbunden.", self.cam.id)
             fail = 0
-            frame_idx = 0
+            letzte_anzeige = 0.0
+            letzte_bewegung = 0.0
 
             while not self._stop.is_set():
-                ok, frame = cap.read()
-                if not ok or frame is None:
+                # grab() holt den Frame, dekodiert ihn aber NICHT. Dekodiert wird
+                # nur, wenn das Bild auch gebraucht wird - das ist der teure Teil.
+                if not cap.grab():
                     fail += 1
                     if fail > 30:
                         log.warning("Kamera %s: zu viele Lesefehler, reconnecte.", self.cam.id)
@@ -109,14 +154,31 @@ class CameraWorker:
                     time.sleep(0.1)
                     continue
                 fail = 0
-                frame_idx += 1
+
+                jetzt = time.time()
+                fuer_anzeige = self.viewers > 0 and (jetzt - letzte_anzeige) >= 1.0 / MAX_ANZEIGE_FPS
+                fuer_bewegung = (self.cam.motion.enabled
+                                 and (jetzt - letzte_bewegung) >= 1.0 / MAX_BEWEGUNG_FPS)
+                # Muss VOR dem naechsten continue stehen: sonst wird die
+                # Bereitschaft genau bei den Kameras nie geprueft, die sie
+                # brauchen (keine Zuschauer, keine Bewegungserkennung).
+                if self._standby_faellig():
+                    break  # Verbindung freigeben, niemand schaut zu
+
+                if not (fuer_anzeige or fuer_bewegung):
+                    continue  # Frame verwerfen, ohne ihn zu dekodieren
+
+                ok, frame = cap.retrieve()
+                if not ok or frame is None:
+                    continue
+
                 h, w = frame.shape[:2]
                 if (w, h) != (self.frame_width, self.frame_height):
                     self.frame_width, self.frame_height = w, h
                     log.info("Kamera %s: Bildgroesse %dx%d.", self.cam.id, w, h)
 
-                # Bewegungserkennung nur auf jedem 2. Frame -> spart CPU.
-                if self.cam.motion.enabled and frame_idx % 2 == 0:
+                if fuer_bewegung:
+                    letzte_bewegung = jetzt
                     try:
                         moved, ratio = self.detector.update(frame)
                         if moved:
@@ -124,11 +186,13 @@ class CameraWorker:
                     except Exception as exc:  # noqa: BLE001
                         log.debug("Bewegungserkennung Fehler (%s): %s", self.cam.id, exc)
 
-                # Aktuelles Bild als JPEG puffern.
-                ok_enc, buf = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 75])
-                if ok_enc:
-                    with self._lock:
-                        self._frame = buf.tobytes()
+                if fuer_anzeige:
+                    letzte_anzeige = jetzt
+                # Rohbild ablegen; das JPEG entsteht erst beim Abholen.
+                with self._lock:
+                    self._raw = frame
+                    self._raw_id += 1
+                    self._note = ""
 
             cap.release()
             self.connected = False
@@ -164,16 +228,51 @@ class CameraWorker:
             return None
 
     def _set_placeholder(self, text: str) -> None:
-        global _PLACEHOLDER
         with self._lock:
-            self._frame = _placeholder_jpeg(f"{self.cam.name}: {text}")
+            self._raw = None
+            self._jpeg = None
+            self._jpeg_id = -1
+            self._note = text
 
     # -- Oeffentliche Helfer --------------------------------------------------
-    def get_jpeg(self) -> bytes:
+    def viewer_an(self) -> None:
         with self._lock:
-            if self._frame is not None:
-                return self._frame
-        return _placeholder_jpeg(f"{self.cam.name}: kein Bild")
+            self.viewers += 1
+            self._last_viewer_ts = time.time()
+
+    def viewer_ab(self) -> None:
+        with self._lock:
+            self.viewers = max(0, self.viewers - 1)
+            self._last_viewer_ts = time.time()
+
+    def wecken(self, timeout: float = 6.0) -> None:
+        """Holt eine Kamera aus der Bereitschaft und wartet kurz auf ein Bild.
+        Fuer Einzelabrufe (Schnappschuss), die keinen Dauerstream aufmachen."""
+        self.viewer_an()
+        try:
+            ende = time.time() + timeout
+            while time.time() < ende:
+                with self._lock:
+                    if self._raw is not None:
+                        return
+                time.sleep(0.2)
+        finally:
+            self.viewer_ab()
+
+    def get_jpeg(self) -> bytes:
+        """Kodiert das aktuelle Rohbild - aber nur einmal je Frame, egal wie
+        viele Betrachter es abholen."""
+        with self._lock:
+            if self._raw is None:
+                return _placeholder_jpeg(f"{self.cam.name}: {self._note or 'kein Bild'}")
+            if self._jpeg is not None and self._jpeg_id == self._raw_id:
+                return self._jpeg
+            ok, buf = cv2.imencode(".jpg", self._raw, [cv2.IMWRITE_JPEG_QUALITY, 75])
+            if not ok:
+                return _placeholder_jpeg(f"{self.cam.name}: Bildfehler")
+            self._jpeg = buf.tobytes()
+            self._jpeg_id = self._raw_id
+            return self._jpeg
 
     @property
     def aspect_ratio(self) -> float:
@@ -201,4 +300,6 @@ class CameraWorker:
             "aspect_ratio": round(self.aspect_ratio, 4),
             "columns": self.cam.columns,
             "fill": self.cam.fill,
+            "viewers": self.viewers,
+            "standby": self.standby,
         }

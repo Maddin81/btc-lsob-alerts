@@ -80,6 +80,10 @@ class CameraConfig:
     # "contain" = ganzes Bild, ggf. mit Balken. "cover" = formatfuellend
     # zuschneiden. Nuetzlich, wenn eine Kachel bewusst breiter gezogen wird.
     fill: str = "contain"
+    # Sekunden ohne Zuschauer, nach denen der RTSP-Stream freigegeben wird.
+    # 0 = nie (Kamera laeuft durch). Greift nur ohne Bewegungserkennung, denn
+    # die braucht naturgemaess ein laufendes Bild.
+    standby_seconds: int = 60
     motion: MotionConfig = field(default_factory=MotionConfig)
 
     @property
@@ -155,7 +159,8 @@ def save_raw(path: str, raw: dict) -> None:
 
 _CAMERA_FIELDS = (
     "id", "name", "host", "username", "password", "rtsp_main", "rtsp_sub",
-    "onvif_port", "ptz", "enabled", "aspect", "columns", "fill", "motion",
+    "onvif_port", "ptz", "enabled", "aspect", "columns", "fill",
+    "standby_seconds", "motion",
 )
 
 
@@ -199,6 +204,13 @@ def normalize_camera(data: dict, existing_ids: set[str] | None = None) -> dict:
     if fuellung not in ("contain", "cover"):
         raise ValueError("Bildanpassung muss 'contain' oder 'cover' sein.")
 
+    try:
+        standby = int(cam.get("standby_seconds", 60))
+    except (TypeError, ValueError):
+        raise ValueError("Bereitschaft muss eine Zahl in Sekunden sein.")
+    if standby < 0:
+        raise ValueError("Bereitschaft darf nicht negativ sein (0 = nie).")
+
     m = cam.get("motion") or {}
     out = {
         "id": cid,
@@ -214,6 +226,7 @@ def normalize_camera(data: dict, existing_ids: set[str] | None = None) -> dict:
         "aspect": aspect,
         "columns": spalten,
         "fill": fuellung,
+        "standby_seconds": standby,
         "motion": {
             "enabled": bool(m.get("enabled", True)),
             "sensitivity_percent": float(m.get("sensitivity_percent", 1.5) or 1.5),
@@ -283,6 +296,7 @@ def parse_config(raw: dict) -> AppConfig:
                 aspect=str(c.get("aspect", "auto") or "auto"),
                 columns=int(c.get("columns", 0) or 0),
                 fill=str(c.get("fill", "contain") or "contain"),
+                standby_seconds=int(c.get("standby_seconds", 60)),
                 motion=MotionConfig(
                     enabled=bool(m.get("enabled", True)),
                     sensitivity_percent=float(m.get("sensitivity_percent", 1.5)),

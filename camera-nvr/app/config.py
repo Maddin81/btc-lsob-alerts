@@ -65,6 +65,13 @@ class CameraConfig:
     rtsp_main: str = ""
     rtsp_sub: str = ""
     onvif_port: int = 80
+    # ONVIF-Zugangsdaten. Leer = es gelten username/password.
+    # Getrennt noetig, weil manche Kameras eigene Namensraeume fuehren: die
+    # Hikvision TandemVu kennt im Web/RTSP nur "admin", fuer ONVIF aber
+    # ausschliesslich einen eigenen Benutzer (bei uns "onvif") - mit admin
+    # scheitert dort jede PTZ-Fahrt.
+    onvif_user: str = ""
+    onvif_password: str = ""
     ptz: bool = False
     enabled: bool = True
     # Bildformat der Kachel: "auto" (aus dem Stream ermittelt) oder z.B. "16:9",
@@ -84,7 +91,18 @@ class CameraConfig:
     # 0 = nie (Kamera laeuft durch). Greift nur ohne Bewegungserkennung, denn
     # die braucht naturgemaess ein laufendes Bild.
     standby_seconds: int = 60
+    # Kamera-Nummer in der Surveillance Station. Nur dafuer da, die dort
+    # gespeicherten PTZ-Positionen samt Namen zu holen - die Kamera selbst
+    # kennt sie nicht. 0 = keine Anbindung.
+    ss_camera_id: int = 0
     motion: MotionConfig = field(default_factory=MotionConfig)
+
+    @property
+    def onvif_login(self) -> tuple[str, str]:
+        """Zugangsdaten fuer ONVIF - eigene, sonst die allgemeinen."""
+        if self.onvif_user:
+            return self.onvif_user, self.onvif_password
+        return self.username, self.password
 
     @property
     def live_url(self) -> str:
@@ -103,6 +121,18 @@ class NotifyConfig:
 
 
 @dataclass
+class SurveillanceConfig:
+    """Zugang zur Surveillance Station - nur zum Lesen/Anfahren der
+    gespeicherten PTZ-Positionen."""
+    enabled: bool = False
+    host: str = ""
+    user: str = ""
+    password: str = ""
+    device_id: str = ""
+    verify_tls: bool = False
+
+
+@dataclass
 class AppConfig:
     host: str = "0.0.0.0"
     port: int = 8080
@@ -111,6 +141,7 @@ class AppConfig:
     events_dir: str = "/data/events"
     retention_days: int = 14
     notify: NotifyConfig = field(default_factory=NotifyConfig)
+    surveillance: SurveillanceConfig = field(default_factory=SurveillanceConfig)
     cameras: list[CameraConfig] = field(default_factory=list)
 
 
@@ -159,8 +190,9 @@ def save_raw(path: str, raw: dict) -> None:
 
 _CAMERA_FIELDS = (
     "id", "name", "host", "username", "password", "rtsp_main", "rtsp_sub",
-    "onvif_port", "ptz", "enabled", "aspect", "columns", "fill",
-    "standby_seconds", "motion",
+    "onvif_port", "onvif_user", "onvif_password", "ptz", "enabled",
+    "aspect", "columns", "fill",
+    "standby_seconds", "ss_camera_id", "motion",
 )
 
 
@@ -221,12 +253,15 @@ def normalize_camera(data: dict, existing_ids: set[str] | None = None) -> dict:
         "rtsp_main": rtsp_main,
         "rtsp_sub": rtsp_sub,
         "onvif_port": port,
+        "onvif_user": str(cam.get("onvif_user", "") or ""),
+        "onvif_password": str(cam.get("onvif_password", "") or ""),
         "ptz": bool(cam.get("ptz", False)),
         "enabled": bool(cam.get("enabled", True)),
         "aspect": aspect,
         "columns": spalten,
         "fill": fuellung,
         "standby_seconds": standby,
+        "ss_camera_id": int(cam.get("ss_camera_id", 0) or 0),
         "motion": {
             "enabled": bool(m.get("enabled", True)),
             "sensitivity_percent": float(m.get("sensitivity_percent", 1.5) or 1.5),
@@ -291,12 +326,15 @@ def parse_config(raw: dict) -> AppConfig:
                 rtsp_main=str(c.get("rtsp_main", "")),
                 rtsp_sub=str(c.get("rtsp_sub", "")),
                 onvif_port=int(c.get("onvif_port", 80)),
+                onvif_user=str(c.get("onvif_user", "") or ""),
+                onvif_password=str(c.get("onvif_password", "") or ""),
                 ptz=bool(c.get("ptz", False)),
                 enabled=bool(c.get("enabled", True)),
                 aspect=str(c.get("aspect", "auto") or "auto"),
                 columns=int(c.get("columns", 0) or 0),
                 fill=str(c.get("fill", "contain") or "contain"),
                 standby_seconds=int(c.get("standby_seconds", 60)),
+                ss_camera_id=int(c.get("ss_camera_id", 0) or 0),
                 motion=MotionConfig(
                     enabled=bool(m.get("enabled", True)),
                     sensitivity_percent=float(m.get("sensitivity_percent", 1.5)),
@@ -304,6 +342,16 @@ def parse_config(raw: dict) -> AppConfig:
                 ),
             )
         )
+
+    ss_raw = raw.get("surveillance", {}) or {}
+    ss = SurveillanceConfig(
+        enabled=bool(ss_raw.get("enabled", False)),
+        host=str(ss_raw.get("host", "")),
+        user=str(ss_raw.get("user", "")),
+        password=str(ss_raw.get("password", "")),
+        device_id=str(ss_raw.get("device_id", "")),
+        verify_tls=bool(ss_raw.get("verify_tls", False)),
+    )
 
     return AppConfig(
         host=str(server.get("host", "0.0.0.0")),
@@ -313,6 +361,7 @@ def parse_config(raw: dict) -> AppConfig:
         events_dir=str(storage.get("events_dir", "/data/events")),
         retention_days=int(storage.get("retention_days", 14)),
         notify=notify,
+        surveillance=ss,
         cameras=cameras,
     )
 

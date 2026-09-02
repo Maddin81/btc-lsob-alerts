@@ -50,6 +50,12 @@
         <label>ONVIF-Port
           <input id="fPort" type="number" value="80" min="1" max="65535" />
         </label>
+        <label>ONVIF-Benutzer <small>(leer = wie oben)</small>
+          <input id="fOnvifUser" placeholder="z.B. onvif" />
+        </label>
+        <label>ONVIF-Passwort <small>(leer = wie oben)</small>
+          <input id="fOnvifPass" type="password" placeholder="" />
+        </label>
         <label>Bildformat
           <select id="fAspect">
             <option value="auto">Automatisch (aus dem Stream)</option>
@@ -134,6 +140,7 @@
           <button data-dir="zout">Zoom &minus;</button>
         </div>
       </div>
+      <div class="presets" hidden></div>
     </section>
   </template>
 

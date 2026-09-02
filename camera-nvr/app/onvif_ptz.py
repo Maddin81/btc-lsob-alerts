@@ -6,8 +6,20 @@ Kameras die ONVIF-Spec oft nur teilweise umsetzen.
 from __future__ import annotations
 
 import logging
+import re
 
 log = logging.getLogger("camera-nvr.onvif")
+
+
+# Kameras legen ab Werk hunderte leere Plaetze an ("Preset 12", "12", "P3").
+# Interessant sind nur die, denen der Nutzer selbst einen Namen gegeben hat.
+_AUTO_NAME = re.compile(r"^(preset|position|punkt|p)?[\s_-]*\d+$", re.IGNORECASE)
+
+
+def ist_eigener_name(name: str) -> bool:
+    """False fuer automatisch vergebene Platzhalternamen."""
+    name = (name or "").strip()
+    return bool(name) and not _AUTO_NAME.match(name)
 
 
 class PTZController:
@@ -58,6 +70,37 @@ class PTZController:
             return True
         except Exception as exc:  # noqa: BLE001
             log.warning("PTZ move fehlgeschlagen (%s): %s", self.host, exc)
+            self._ok = False
+            return False
+
+    def presets(self) -> list[dict]:
+        """Gespeicherte Positionen der Kamera. Gibt [] zurueck, wenn die
+        Kamera keine kennt oder ONVIF nicht antwortet."""
+        if not self._ensure():
+            return []
+        try:
+            roh = self._ptz.GetPresets({"ProfileToken": self._token}) or []
+        except Exception as exc:  # noqa: BLE001
+            log.warning("GetPresets fehlgeschlagen (%s): %s", self.host, exc)
+            return []
+        aus: list[dict] = []
+        for p in roh:
+            token = str(getattr(p, "token", "") or "")
+            name = str(getattr(p, "Name", "") or "").strip()
+            if not token:
+                continue
+            aus.append({"token": token, "name": name or token,
+                        "eigen": ist_eigener_name(name)})
+        return aus
+
+    def goto_preset(self, token: str) -> bool:
+        if not self._ensure():
+            return False
+        try:
+            self._ptz.GotoPreset({"ProfileToken": self._token, "PresetToken": token})
+            return True
+        except Exception as exc:  # noqa: BLE001
+            log.warning("GotoPreset %s fehlgeschlagen (%s): %s", token, self.host, exc)
             self._ok = False
             return False
 

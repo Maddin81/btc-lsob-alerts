@@ -73,6 +73,31 @@ function applyLayout(card, cam) {
   card.el.classList.toggle("fill", fill);
 }
 
+async function ladePositionen(id, el) {
+  try {
+    const d = await api(`/api/presets/${encodeURIComponent(id)}`);
+    if (!d.presets.length) return;
+    const box = el.querySelector(".presets");
+    box.innerHTML = '<span class="hint">Positionen:</span>';
+    d.presets.forEach((p) => {
+      const b = document.createElement("button");
+      b.textContent = p.name;
+      b.title = "Kamera auf gespeicherte Position fahren";
+      b.addEventListener("click", async () => {
+        b.disabled = true;
+        try {
+          const r = await api(`/api/preset/${encodeURIComponent(id)}?token=${encodeURIComponent(p.token)}`,
+                              { method: "POST" });
+          if (!r.ok) alert("Kamera hat die Fahrt abgelehnt.");
+        } catch (e) { alert("Fehlgeschlagen: " + e.message); }
+        setTimeout(() => { b.disabled = false; }, 1500);
+      });
+      box.appendChild(b);
+    });
+    box.hidden = false;
+  } catch (e) { /* keine Positionen -> Leiste bleibt aus */ }
+}
+
 function buildCard(cam) {
   const node = cardTpl.content.cloneNode(true);
   const el = node.querySelector(".card");
@@ -84,6 +109,9 @@ function buildCard(cam) {
   if (cam.ptz) {
     el.querySelector(".ptz").hidden = false;
     wirePtz(cam.id, el);
+    // Nur die selbst benannten Positionen - die Werksplaetze ("Preset 12")
+    // filtert die Schnittstelle heraus.
+    ladePositionen(cam.id, el);
   }
   grid.appendChild(node);
   const card = {
@@ -155,6 +183,8 @@ const F = {
   enabled: document.getElementById("fEnabled"),
   columns: document.getElementById("fColumns"),
   fill: document.getElementById("fFill"),
+  onvifUser: document.getElementById("fOnvifUser"),
+  onvifPass: document.getElementById("fOnvifPass"),
 };
 
 F.aspect.addEventListener("change", () => {
@@ -253,6 +283,9 @@ function openForm(cam) {
   F.ptz.checked = cam ? !!cam.ptz : false;
   F.motion.checked = cam ? !(cam.motion && cam.motion.enabled === false) : true;
   F.enabled.checked = cam ? cam.enabled !== false : true;
+  F.onvifUser.value = cam ? cam.onvif_user || "" : "";
+  F.onvifPass.value = "";
+  F.onvifPass.placeholder = cam && cam.has_onvif_password ? "(leer = unveraendert)" : "";
   F.columns.value = String(cam && cam.columns ? cam.columns : 0);
   F.fill.value = cam && cam.fill === "cover" ? "cover" : "contain";
   setAspectField(cam ? cam.aspect : "auto");
@@ -309,6 +342,8 @@ form.addEventListener("submit", async (e) => {
     username: F.user.value.trim() || "admin",
     password: F.pass.value,
     onvif_port: parseInt(F.port.value, 10) || 80,
+    onvif_user: F.onvifUser.value.trim(),
+    onvif_password: F.onvifPass.value,
     rtsp_main: F.main.value.trim(),
     rtsp_sub: F.sub.value.trim(),
     ptz: F.ptz.checked,

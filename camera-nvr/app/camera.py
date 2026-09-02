@@ -73,8 +73,11 @@ class CameraWorker:
             sensitivity_percent=cam.motion.sensitivity_percent,
             region=cam.motion.region,
         )
+        # ONVIF braucht ggf. EIGENE Zugangsdaten (siehe CameraConfig.onvif_login):
+        # bei der TandemVu kennt der ONVIF-Namensraum "admin" nicht.
+        onvif_user, onvif_pw = cam.onvif_login
         self.ptz = (
-            PTZController(cam.host, cam.onvif_port, cam.username, cam.password)
+            PTZController(cam.host, cam.onvif_port, onvif_user, onvif_pw)
             if cam.ptz
             else None
         )

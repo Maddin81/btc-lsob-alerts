@@ -30,6 +30,7 @@ from .config import (
     unique_id,
 )
 from .onvif_ptz import COMMON_ONVIF_PORTS, discover, probe_onvif
+from .surveillance import SurveillanceStation
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 log = logging.getLogger("camera-nvr")
@@ -39,7 +40,7 @@ CONFIG_PATH = os.environ.get("CAMERA_NVR_CONFIG", "/config/config.yaml")
 # Globaler Zustand, in lifespan gefuellt.
 # "raw" ist der unveraenderte YAML-Baum (mit ${VAR}), "config" die aufgeloeste
 # Fassung fuer die Laufzeit.
-STATE: dict = {"config": None, "raw": None, "workers": {}, "setup_mode": False}
+STATE: dict = {"config": None, "raw": None, "workers": {}, "setup_mode": False, "ss": None}
 _reload_lock = threading.Lock()
 
 
@@ -67,6 +68,10 @@ def _apply(cfg: AppConfig) -> int:
         if cid not in new:
             w.stop()
 
+    ss = cfg.surveillance
+    STATE["ss"] = (SurveillanceStation(ss.host, ss.user, ss.password,
+                                       ss.device_id, ss.verify_tls)
+                   if ss.enabled and ss.host and ss.user else None)
     STATE["config"] = cfg
     STATE["workers"] = new
     STATE["setup_mode"] = not cfg.cameras
@@ -209,8 +214,9 @@ def config_cameras(_: None = Depends(require_auth)) -> JSONResponse:
     Verwaltungsliste. Passwoerter werden nicht ausgeliefert."""
     out = []
     for c in _raw_cameras():
-        entry = {k: v for k, v in c.items() if k != "password"}
+        entry = {k: v for k, v in c.items() if k not in ("password", "onvif_password")}
         entry["has_password"] = bool(c.get("password"))
+        entry["has_onvif_password"] = bool(c.get("onvif_password"))
         out.append(entry)
     return JSONResponse({"cameras": out})
 
@@ -248,6 +254,8 @@ def update_camera(camera_id: str, payload: dict = Body(...), _: None = Depends(r
     # Leeres Passwortfeld im Formular = Passwort unveraendert lassen.
     if not str((payload or {}).get("password", "")).strip():
         merged["password"] = cams[idx].get("password", "")
+    if not str((payload or {}).get("onvif_password", "")).strip():
+        merged["onvif_password"] = cams[idx].get("onvif_password", "")
     merged["id"] = camera_id
 
     taken = {str(c.get("id")) for c in cams} - {camera_id}
@@ -372,6 +380,45 @@ def ptz(
         raise HTTPException(status_code=400, detail="Kamera unterstuetzt kein PTZ")
     ok = worker.ptz.stop() if stop_move else worker.ptz.move(pan, tilt, zoom)
     return JSONResponse({"ok": ok})
+
+
+@app.get("/api/presets/{camera_id}")
+def list_presets(camera_id: str, alle: bool = False, _: None = Depends(require_auth)) -> JSONResponse:
+    """Gespeicherte Positionen. Bevorzugt aus der Surveillance Station, denn
+    NUR DORT stehen die vom Nutzer vergebenen Namen ("Schaukel", "Grill").
+    Ueber ONVIF liefert die Kamera bloss Werksfunktionen und Leerplaetze.
+    Ohne SS-Anbindung bleibt ONVIF als Rueckfall.
+    Standardmaessig werden durchnummerierte Leerplaetze ausgeblendet."""
+    worker = _worker(camera_id)
+    quelle, p = "onvif", []
+    ss = STATE.get("ss")
+    if ss and worker.cam.ss_camera_id:
+        try:
+            p = ss.presets(worker.cam.ss_camera_id)
+            quelle = "surveillance"
+        except Exception as exc:  # noqa: BLE001
+            log.warning("Positionen aus der Surveillance Station (%s): %s", camera_id, exc)
+    if not p and worker.ptz:
+        p = worker.ptz.presets()
+    return JSONResponse({
+        "quelle": quelle,
+        "presets": p if alle else [x for x in p if x["eigen"]],
+    })
+
+
+@app.post("/api/preset/{camera_id}")
+def goto_preset(camera_id: str, token: str = Query(...), _: None = Depends(require_auth)) -> JSONResponse:
+    worker = _worker(camera_id)
+    ss = STATE.get("ss")
+    if ss and worker.cam.ss_camera_id:
+        try:
+            ss.goto(worker.cam.ss_camera_id, token)
+            return JSONResponse({"ok": True})
+        except Exception as exc:  # noqa: BLE001
+            raise HTTPException(status_code=502, detail=f"Surveillance Station: {exc}")
+    if not worker.ptz:
+        raise HTTPException(status_code=400, detail="Kamera unterstuetzt kein PTZ")
+    return JSONResponse({"ok": worker.ptz.goto_preset(token)})
 
 
 @app.get("/api/discover")

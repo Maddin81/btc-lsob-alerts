@@ -1,0 +1,192 @@
+# Camera-NVR — eigene Software für ONVIF-Kameras
+
+Eine schlanke, selbst gehostete Kamera-Software als Ersatz für die alte
+Hersteller-App billiger China-ONVIF-Kameras. Läuft als **Docker-Container**
+(z. B. auf einer **Synology DiskStation**) und redet direkt per **ONVIF + RTSP**
+mit den Kameras — unabhängig von der Original-Firmware-App.
+
+## Funktionen
+
+- 📺 **Live-Ansicht** aller Kameras im Browser (Gitter-Dashboard, mehrere Betrachter gleichzeitig)
+- ➕ **Beliebig viele Kameras** — jede einzeln im Browser anlegen, ändern, abschalten
+  oder entfernen; jede mit **eigenen Zugangsdaten, eigenem ONVIF-Port und eigenem Bildformat**
+- 🖼️ **Richtiges Seitenverhältnis je Kamera** (auch sehr breite Kameras wie 1920×576)
+- 🚨 **Bewegungserkennung + Alarm** mit Snapshot und Benachrichtigung (Telegram / Webhook)
+- 🎮 **PTZ-Steuerung** (Schwenken / Neigen / Zoom) für Kameras, die das können
+- 🔍 **ONVIF-Gerätesuche** im lokalen Netz (findet IP-Adressen automatisch)
+- 💾 Ereignis-Snapshots werden persistent gespeichert (mit automatischer Aufräumung)
+
+Es wird **keine** Kamera-Firmware verändert. Die Software ist ein *Client*, der
+die Standard-Protokolle nutzt, die praktisch jede „ONVIF"-Kamera spricht.
+
+## Voraussetzungen
+
+- Die Kameras sind im selben Netz erreichbar und ONVIF/RTSP ist aktiviert
+  (bei den meisten Modellen im Kamera-Webinterface einschaltbar).
+- Docker + Docker Compose (auf Synology über **Container Manager** verfügbar).
+
+## Einfachster Weg: Einrichtung komplett im Browser (kein Terminal)
+
+Im Dashboard oben rechts auf **„Kameras verwalten"**. Dort:
+
+- **„+ Kamera hinzufügen"** — Name, IP, Benutzer, Passwort, ONVIF-Port eintragen.
+  Der Knopf **„RTSP automatisch auslesen"** fragt *genau diese eine* Kamera per
+  ONVIF nach ihren echten Stream-Adressen und trägt sie ein. Beliebig oft
+  wiederholen — jede Kamera behält ihre eigenen Zugangsdaten und ihren eigenen Port.
+- **„Netz durchsuchen"** — findet alle ONVIF-Kameras im Netz auf einmal. Danach
+  auswählen, welche übernommen werden sollen. Bereits eingerichtete Kameras
+  bleiben dabei erhalten, sie werden **ergänzt, nicht ersetzt**.
+- **„Bearbeiten" / „Entfernen"** je Kamera. Beim Bearbeiten heißt ein leeres
+  Passwortfeld: *Passwort unverändert lassen*.
+
+Änderungen greifen sofort — es startet nur die betroffene Kamera neu, die
+übrigen Live-Bilder laufen weiter. Kein SSH, kein Container-Neustart.
+
+> Die `config.yaml` wird dabei neu geschrieben. **Eigene Kommentare in der Datei
+> gehen dabei verloren** — die Werte selbst und `${VAR}`-Platzhalter bleiben erhalten.
+
+### Bildformat (wichtig bei breiten Kameras)
+
+Nicht jede Kamera liefert 16:9. Eine Reolink liefert im Sub-Stream z. B.
+1920×576 — das ist deutlich breiter (10:3). Deshalb hat jede Kamera ein
+eigenes **Bildformat**:
+
+| Einstellung | Bedeutung |
+|---|---|
+| `auto` (Standard) | wird aus dem laufenden Stream **gemessen** — passt immer |
+| `16:9`, `4:3`, `10:3`, `32:9`, `1:1`, `9:16` | fest vorgegeben |
+| eigenes, z. B. `21:9` | frei eintragbar |
+
+Kacheln mit einem Verhältnis ab 2.2:1 belegen im Gitter automatisch **zwei
+Spalten**, damit ein breites Bild nicht zum schmalen Streifen schrumpft. Der
+Schalter **„Bild füllen"** oben schneidet statt Balken zu zeigen (nur Ansicht,
+gilt pro Betrachter).
+
+Auf einer Synology reicht dafür der **Container Manager** (grafisch):
+1. Ordner `camera-nvr/` in einen freigegebenen Ordner legen (z. B. `/docker`).
+2. Container Manager → **Projekt** → **Erstellen** → Pfad zum Ordner wählen
+   (nutzt die `docker-compose.yml`) → **Erstellen/Starten**.
+3. Browser: `http://<Synology-IP>:8080` → Assistent führt durch den Rest.
+
+## Schnellstart (per Terminal)
+
+```bash
+# 1. Konfiguration anlegen
+mkdir -p config data
+cp config.example.yaml config/config.yaml
+cp .env.example .env
+#   -> config/config.yaml mit deinen Kameras füllen
+#   -> .env mit den Kamera-Passwörtern füllen
+
+# 2. Bauen & starten
+docker compose up -d --build
+
+# 3. Dashboard öffnen
+#    http://<IP-der-Synology>:8080
+```
+
+### RTSP-URL automatisch finden (empfohlen)
+
+Du musst die RTSP-Pfade **nicht selbst raten**. Die Software fragt die Kameras
+per ONVIF direkt nach ihren echten Stream-URLs. Zwei Wege:
+
+**A) Im Dashboard:** **„Kameras verwalten"** → beim Anlegen einer Kamera auf
+**„RTSP automatisch auslesen"**, oder **„Netz durchsuchen"** für alle auf einmal.
+
+**B) Per Kommandozeile** (findet auch die IPs automatisch):
+
+```bash
+# Ganzes Netz durchsuchen und Config gleich schreiben:
+docker compose run --rm camera-nvr python -m app.autodetect \
+    --user admin --pass DEIN_PASSWORT -o /config/config.yaml
+
+# Oder gezielt einzelne IPs:
+docker compose run --rm camera-nvr python -m app.autodetect \
+    --host 192.168.1.50 --host 192.168.1.51 --user admin --pass DEIN_PASSWORT
+
+# Falls Multicast blockiert ist: Subnetz direkt scannen
+docker compose run --rm camera-nvr python -m app.autodetect \
+    --subnet 192.168.1.0/24 --user admin --pass DEIN_PASSWORT -o /config/config.yaml
+```
+
+Findet die Netz-Suche (Multicast) nichts, scannt die Software automatisch dein
+lokales `/24`-Subnetz nach ONVIF-Ports ab — du musst also nichts von Hand suchen.
+
+Die Erkennung liefert automatisch: RTSP-Haupt- & Sub-Stream, ONVIF-Port,
+PTZ-Fähigkeit und einen Vorschlag für Name/ID. Falls du das Passwort nicht
+angibst, werden gängige Werks-Zugangsdaten durchprobiert.
+
+### RTSP-URL manuell herausfinden
+
+Falls die Auto-Erkennung mal nicht greift — jeder Hersteller nutzt ein eigenes
+RTSP-Pfad-Schema. Häufige Beispiele:
+
+| Hersteller (typisch) | Haupt-Stream | Sub-Stream |
+|---|---|---|
+| Hikvision-kompatibel | `rtsp://user:pass@IP:554/Streaming/Channels/101` | `.../102` |
+| Dahua-kompatibel | `rtsp://user:pass@IP:554/cam/realmonitor?channel=1&subtype=0` | `subtype=1` |
+| Generisch / China | `rtsp://user:pass@IP:554/live/ch0` | `/live/ch1` |
+
+Wenn du den Pfad nicht kennst: im Dashboard **„Kameras verwalten" → „Netz
+durchsuchen"** (ONVIF-Discovery), oder teste die URLs mit VLC
+(*Medien → Netzwerkstream öffnen*).
+
+> **Tipp:** Immer den **Sub-Stream** (niedrige Auflösung) für Live-Grid und
+> Bewegungserkennung eintragen — das spart auf der Synology enorm viel CPU.
+
+## Konfiguration
+
+Alle Einstellungen in `config/config.yaml` — siehe ausführlich kommentierte
+[`config.example.yaml`](config.example.yaml). Passwörter kommen über `${VAR}`
+aus der `.env` (nicht im Klartext in der YAML).
+
+### Bewegungserkennung feinjustieren
+
+- `sensitivity_percent`: kleiner = empfindlicher (Standard 1.5).
+- `region`: `[x, y, w, h]` in Prozent, um nur einen Bildbereich zu überwachen
+  (z. B. nur die Einfahrt, nicht die Straße).
+
+### Eine Kamera vorübergehend stilllegen
+
+`enabled: false` (oder im Dashboard den Haken **„Aktiv"** entfernen). Die Kamera
+bleibt eingerichtet, wird aber nicht mehr abgefragt und erscheint nicht im Gitter.
+
+### Benachrichtigungen
+
+- **Telegram:** `bot_token` (von @BotFather) und `chat_id` setzen, `enabled: true`.
+- **Webhook:** beliebige URL, bekommt bei Bewegung ein JSON-POST.
+
+## Zugriff absichern
+
+Optionalen Login (Basic Auth) fürs Dashboard in `config.yaml` unter
+`server.auth_user` / `auth_pass` setzen. Für Zugriff von außen empfiehlt sich
+der **Synology Reverse Proxy** mit HTTPS statt Port-Weiterleitung.
+
+## Hinweise zum Netzwerkmodus
+
+`docker-compose.yml` nutzt `network_mode: host`, damit die **ONVIF-Gerätesuche**
+(Multicast) funktioniert. In diesem Modus wird die `ports:`-Sektion ignoriert —
+der Dienst hängt direkt auf Port `8080` des Hosts. Brauchst du die Auto-Suche
+nicht, entferne `network_mode: host`; dann greift das normale Port-Mapping.
+
+## Architektur (kurz)
+
+```
+Browser ──HTTP/MJPEG──▶ FastAPI (app/main.py)
+                          │
+                          ├─ CameraWorker (app/camera.py)  ── RTSP ──▶ Kamera
+                          │     ├─ MotionDetector (motion.py)
+                          │     └─ Alarm (notify.py)
+                          └─ PTZController (onvif_ptz.py)   ── ONVIF ─▶ Kamera
+```
+
+Ein Hintergrund-Thread pro Kamera liest den Stream einmal und verteilt ihn an
+alle Betrachter — die Kamera wird also nicht durch jeden Browser neu belastet.
+
+## Lokal (ohne Docker) testen
+
+```bash
+pip install -r requirements.txt
+export CAMERA_NVR_CONFIG=./config/config.yaml
+uvicorn app.main:app --reload --port 8080
+```

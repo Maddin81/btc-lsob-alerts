@@ -1,0 +1,8 @@
+fastapi==0.111.0
+uvicorn[standard]==0.30.1
+opencv-python-headless==4.10.0.84
+numpy==1.26.4
+onvif-zeep==0.2.12
+WSDiscovery==2.0.0
+PyYAML==6.0.1
+requests==2.32.3

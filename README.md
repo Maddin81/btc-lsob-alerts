@@ -1,22 +1,17 @@
 # btc-lsob-alerts
 
-Dieses Repo enthaelt vier voneinander unabhaengige Projekte. Jedes liegt in
-seinem eigenen Ordner mit eigener README und eigenen Abhaengigkeiten.
+LSOB-Alerts: reimplementiert die Logik aus `Custom_LSOB_Pro.pine` fuer mehrere
+Assets und Zeitrahmen und meldet "LSOB Created" / "LSOB Entry" per Telegram.
+Laeuft als GitHub-Actions-Cron (`.github/workflows/lsob-check.yml`, alle 5 min).
 
-| Ordner | Projekt | Laeuft wo |
-|--------|---------|-----------|
-| `/` (Root) | **LSOB-Alerts** – `lsob_check.py`, `backtest.py`, `requirements.txt`, Workflow `.github/workflows/lsob-check.yml` | GitHub Actions (Cron alle 5 min) → Telegram |
-| `mcp_tradingview/` | **TradingView-MCP-Server** fuer Claude Desktop / Claude Code auf dem Mac | lokal (MacBook) |
-| `camera-nvr/` | **Camera-NVR** – eigene Software fuer ONVIF-Kameras | Docker (z. B. Synology) |
-| `crypto_market_monitor/` | **Crypto-Market-Monitor** – einfacher Preisalarm-Bot | lokal (Cron) |
+- `lsob_check.py` – Engine + Alerts (Details im Docstring)
+- `backtest.py` – Backtest ueber die gleiche Engine
+- `state.json` im Root ist nur ein einmaliger Seed; der Laufzeit-State
+  (`state.json`, `signals.csv`) lebt auf dem Daten-Branch `lsob-state`.
 
-## LSOB-Alerts (Hauptprojekt)
+## Ehemalige Unterprojekte
 
-Reimplementiert die Logik aus `Custom_LSOB_Pro.pine` fuer mehrere Assets und
-Zeitrahmen und meldet "LSOB Created" / "LSOB Entry" per Telegram. Details im
-Docstring von `lsob_check.py`. Der Laufzeit-State (`state.json`, `signals.csv`)
-lebt auf dem Daten-Branch `lsob-state`; die `state.json` im Root ist nur ein
-einmaliger Seed.
-
-Der Workflow fuehrt ausschliesslich `lsob_check.py` aus. Die anderen Ordner
-werden von GitHub Actions nicht angefasst.
+Camera-NVR, TradingView-MCP-Server und Crypto-Market-Monitor wurden aus diesem
+Repo herausgeloest. Ihre Historie liegt auf den Branches `split/camera-nvr`,
+`split/mcp_tradingview` und `split/crypto_market_monitor` und gehoert in eigene
+Repos.

@@ -95,6 +95,9 @@ TV_INTERVAL = {"1h": "60", "4h": "240", "8h": "480", "1d": "D", "1w": "W"}
 STATE_DIR = os.environ.get("STATE_DIR") or os.path.dirname(os.path.abspath(__file__))
 STATE_FILE = os.path.join(STATE_DIR, "state.json")
 SIGNALS_FILE = os.path.join(STATE_DIR, "signals.csv")
+# Vom Markt-Radar (market_check.py) gepflegt; hier nur gelesen, um LSOB-Alerts
+# mit dem Sentiment (Fear & Greed) anzureichern.
+MARKET_STATE_FILE = os.path.join(STATE_DIR, "market_state.json")
 
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
 TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID")
@@ -405,6 +408,36 @@ def fmt_price(p):
     return f"${p:.6g}"
 
 
+def sentiment_note(direction):
+    """Kontext-Hinweis aus dem Fear-&-Greed-Index (vom Markt-Radar gecacht).
+    Angst = Rueckenwind fuer Longs (Contrarian), Gier = Rueckenwind fuer Shorts;
+    ein Trade GEGEN ein extremes Sentiment bekommt eine Vorsicht-Markierung."""
+    try:
+        with open(MARKET_STATE_FILE) as f:
+            fng = json.load(f).get("fear_greed")
+        value = int(fng["value"])
+        klass = fng["classification"]
+    except Exception:
+        return None
+    extreme_fear, fear = value <= 24, value <= 44
+    greed, extreme_greed = value >= 56, value >= 76
+    if direction == "long":
+        if extreme_fear:
+            return f"🧠 Contrarian-Konfluenz: Markt in extremer Angst (F&G {value})"
+        if fear:
+            return f"🧠 Sentiment-Rueckenwind: Markt-Angst (F&G {value})"
+        if extreme_greed:
+            return f"⚠️ Vorsicht: Long bei extremer Gier (F&G {value})"
+    else:
+        if extreme_greed:
+            return f"🧠 Contrarian-Konfluenz: Markt in extremer Gier (F&G {value})"
+        if greed:
+            return f"🧠 Sentiment-Rueckenwind: Markt-Gier (F&G {value})"
+        if extreme_fear:
+            return f"⚠️ Vorsicht: Short bei extremer Angst (F&G {value})"
+    return None
+
+
 def send_telegram(text):
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
     data = urllib.parse.urlencode({"chat_id": TELEGRAM_CHAT_ID, "text": text}).encode()
@@ -626,6 +659,9 @@ def notify_events(state, key, res):
                 lines.append(f"SL-Idee: ueber {fmt_price(box['top'])}")
         if confluence:
             lines.append(f"⭐ Konfluenz: aktive {'/'.join(confluence)} {direction.capitalize()}-Zone")
+        note = sentiment_note(direction)
+        if note:
+            lines.append(note)
         lines.append(tv_url)
         caption = "\n".join(lines)
 

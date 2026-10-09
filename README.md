@@ -1,4 +1,4 @@
-# btc-lsob-alerts
+# LSOB-Alerts für mehrere Assetklassen
 
 LSOB-Alerts: reimplementiert die Logik aus `Custom_LSOB_Pro.pine` fuer mehrere
 Assets und Zeitrahmen und meldet "LSOB Created" / "LSOB Entry" per Telegram.
@@ -21,6 +21,12 @@ Repositories weitergefuehrt:
 - [TradingView-MCP-Server](https://github.com/Maddin81/mcp-tradingview):
   technische Marktanalysen per MCP abfragen; lokal, insbesondere auf dem Mac.
 - [Crypto-Market-Monitor](https://github.com/Maddin81/crypto-market-monitor):
-  eigenstaendiger Preisalarm-Bot; lokal oder per Cron.
+  eigenstaendige Krypto-Marktberichte mit Alarmmarkierungen, Volumenanalyse
+  und Nachrichtenrecherche; lokal oder per Cron.
 
 Diese Anwendungen sind keine Abhaengigkeiten des LSOB-Workflows.
+
+Der integrierte `market_check.py`-Radar bleibt bei LSOB: Er nutzt dieselben
+Hilfsfunktionen und den gemeinsamen State und liefert Sentiment fuer die
+LSOB-Signale. Der separate Crypto-Market-Monitor erstellt dagegen eigene
+vollstaendige Marktberichte.

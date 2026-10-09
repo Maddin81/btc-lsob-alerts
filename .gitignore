@@ -1,4 +1,4 @@
 __pycache__/
 state-data/
+.env
 .venv/
-mcp_tradingview/.venv/

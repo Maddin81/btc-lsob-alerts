@@ -1,2 +1,8 @@
 __pycache__/
 state-data/
+.venv/
+mcp_tradingview/.venv/
+config/config.yaml
+.env
+data/
+*.pyc
